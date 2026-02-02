@@ -109,11 +109,25 @@
       if (!maps[index] || !layer.geojson) {
         return undefined;
       }
-      const pixelPoints = layer.geojson.coordinates[0].map(([lng, lat]) => {
-        const point = maps[index]!.project([lng, lat]);
-        return `${point.x}px ${point.y}px`;
-      });
-      return `polygon(${pixelPoints.join(", ")})`;
+      const pathData = layer.geojson.coordinates
+        .map((ring) => {
+          if (ring.length === 0) {
+            return "";
+          }
+          const [start, ...rest] = ring;
+          const startPoint = maps[index]!.project(start as maplibregl.LngLatLike);
+          const segments = rest
+            .map(([lng, lat]) => {
+              const point = maps[index]!.project([lng, lat]);
+              return `L ${point.x} ${point.y}`;
+            })
+            .join(" ");
+          return `M ${startPoint.x} ${startPoint.y} ${segments} Z`;
+        })
+        .filter(Boolean)
+        .join(" ");
+
+      return pathData.length > 0 ? `path("${pathData}")` : undefined;
     }),
   );
 
@@ -138,6 +152,7 @@
       inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; " +
         (clipPaths[i] ? `clip-path: ${clipPaths[i]};` : undefined)}
       attributionControl={i === 0 ? undefined : false}
+      aroundCenter={i === 0}
       bind:center={layer.center}
       bind:bearing={layer.bearing}
       bind:map={maps[i]}
