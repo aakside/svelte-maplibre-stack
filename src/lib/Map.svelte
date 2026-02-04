@@ -1,7 +1,7 @@
 <script lang="ts">
   import { center } from "@turf/turf";
   import type { Polygon } from "geojson";
-  import maplibregl from "maplibre-gl";
+  import maplibregl, { type FlyToOptions } from "maplibre-gl";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
 
   export interface Layer {
@@ -18,8 +18,10 @@
     zoom: number;
   };
 
+  export type Layers = [FirstLayer, ...Layer[]];
+
   interface Props {
-    layers: [FirstLayer, ...Layer[]];
+    layers: Layers;
     style?: string | maplibregl.StyleSpecification;
   }
 
@@ -66,9 +68,9 @@
     }),
   );
 
-  $effect(() => {
+  $effect.pre(() => {
     layers.slice(1).forEach((layer, index) => {
-      $effect(() => {
+      $effect.pre(() => {
         layer.zoom =
           layers[0].zoom -
           Math.log2(
@@ -81,7 +83,7 @@
         layer.bearing += layers[0].bearing - prevBaseMapBearing;
       });
 
-      $effect(() => {
+      $effect.pre(() => {
         const map = maps[index + 1];
         if (map) {
           const selectedGeometryCenterPoint = map.project(layerSelectedGeometryCenters[index + 1]);
@@ -92,6 +94,45 @@
               (selectedGeometryCenterPoint.y - layerBaseMapCenterPoints[index].y),
           ]);
         }
+      });
+
+      $effect(() => {
+        if (!maps[0] || !maps[index + 1]) {
+          return;
+        }
+
+        const target = maps[0].getCanvasContainer();
+        const source = maps[index + 1]!.getCanvasContainer();
+
+        const onWheel = (e: WheelEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          target.dispatchEvent(
+            new WheelEvent("wheel", {
+              bubbles: true,
+              cancelable: true,
+              deltaX: e.deltaX,
+              deltaY: e.deltaY,
+              deltaZ: e.deltaZ,
+              deltaMode: e.deltaMode,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              screenX: e.screenX,
+              screenY: e.screenY,
+              ctrlKey: e.ctrlKey,
+              shiftKey: e.shiftKey,
+              altKey: e.altKey,
+              metaKey: e.metaKey,
+            }),
+          );
+        };
+
+        source.addEventListener("wheel", onWheel, { passive: false, capture: true });
+
+        return () => {
+          source.removeEventListener("wheel", onWheel, { capture: true });
+        };
       });
     });
   });
@@ -135,6 +176,12 @@
     prevBaseMapBearing = layers[0].bearing;
   });
 
+  export function flyTo(options: FlyToOptions, overlays: Layer[]) {
+    if (!maps[0]) return;
+    layers = [layers[0], ...overlays];
+    maps[0].flyTo(options);
+  }
+
   export const ro = (node: Element) => {
     const ro = new ResizeObserver(([entry]) => {
       width = entry.contentRect.width;
@@ -156,15 +203,12 @@
       bind:center={layer.center}
       bind:bearing={layer.bearing}
       bind:map={maps[i]}
-      bind:zoom={
-        () => layer.zoom, (layerZoom) => (layers[0].zoom = i === 0 ? layerZoom! : layers[0].zoom)
-      }
+      bind:zoom={layer.zoom}
       bind:pitch
       bind:roll
       bind:elevation
       minPitch={0}
       maxPitch={0}
-      scrollZoom={i === 0}
       onmoveend={(ev) => {
         if (i !== 0 && ev.originalEvent) {
           const newSelectedGeometryCenterPoint = maps[i]!.project(layerSelectedGeometryCenters[i]);

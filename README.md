@@ -6,7 +6,7 @@ Overlay clipped basemaps over each other.
 
 - Zooming in/out is visually unstable. Panning the basemap after zooming should correctly position overlays.
 
-- Zooming in/out over an overlay is disabled.
+- Pinch zooming in/out over an overlay is disabled.
 
 - Text labels in overlays are clipped.
 
