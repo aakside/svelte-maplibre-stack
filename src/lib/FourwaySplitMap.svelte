@@ -17,16 +17,8 @@
   $effect(() => {
     previousBasemapCenter = centers[0];
   });
-  let zooms = $state(
-    centers.map(
-      (center) =>
-        INITIAL_ZOOM -
-        Math.log2(
-          Math.cos((centers[0].lat * Math.PI) / 180) / Math.cos((center.lat * Math.PI) / 180),
-        ),
-    ),
-  );
-  let bearings = $state([0, 0, 0, 0]);
+  let zoom = $state(INITIAL_ZOOM);
+  let bearings = $state([0, 30, 60, 90]);
   let previousBasemapBearing = $state(0);
   $effect(() => {
     previousBasemapBearing = bearings[0];
@@ -73,28 +65,7 @@
       }
     }
     bind:map={maps[0]}
-    bind:zoom={
-      () => zooms[0],
-      (value) =>
-        (zooms = [
-          value,
-          value -
-            Math.log2(
-              Math.cos((centers[0].lat * Math.PI) / 180) /
-                Math.cos((centers[1].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[0].lat * Math.PI) / 180) /
-                Math.cos((centers[2].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[0].lat * Math.PI) / 180) /
-                Math.cos((centers[3].lat * Math.PI) / 180),
-            ),
-        ])
-    }
+    bind:zoom
     bind:bearing={
       () => bearings[0],
       (value) =>
@@ -126,26 +97,17 @@
     bind:center={centers[1]}
     bind:map={maps[1]}
     bind:zoom={
-      () => zooms[1],
+      () =>
+        zoom -
+        Math.log2(
+          Math.cos((centers[0].lat * Math.PI) / 180) / Math.cos((centers[1].lat * Math.PI) / 180),
+        ),
       (value) =>
-        (zooms = [
+        (zoom =
           value -
-            Math.log2(
-              Math.cos((centers[1].lat * Math.PI) / 180) /
-                Math.cos((centers[0].lat * Math.PI) / 180),
-            ),
-          value,
-          value -
-            Math.log2(
-              Math.cos((centers[1].lat * Math.PI) / 180) /
-                Math.cos((centers[2].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[1].lat * Math.PI) / 180) /
-                Math.cos((centers[3].lat * Math.PI) / 180),
-            ),
-        ])
+          Math.log2(
+            Math.cos((centers[1].lat * Math.PI) / 180) / Math.cos((centers[0].lat * Math.PI) / 180),
+          ))
     }
     bind:bearing={
       () => bearings[1], (value) => (bearings = [bearings[0], value, bearings[2], bearings[3]])
@@ -171,26 +133,17 @@
     bind:center={centers[2]}
     bind:map={maps[2]}
     bind:zoom={
-      () => zooms[2],
+      () =>
+        zoom -
+        Math.log2(
+          Math.cos((centers[0].lat * Math.PI) / 180) / Math.cos((centers[2].lat * Math.PI) / 180),
+        ),
       (value) =>
-        (zooms = [
+        (zoom =
           value -
-            Math.log2(
-              Math.cos((centers[2].lat * Math.PI) / 180) /
-                Math.cos((centers[0].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[2].lat * Math.PI) / 180) /
-                Math.cos((centers[1].lat * Math.PI) / 180),
-            ),
-          value,
-          value -
-            Math.log2(
-              Math.cos((centers[2].lat * Math.PI) / 180) /
-                Math.cos((centers[3].lat * Math.PI) / 180),
-            ),
-        ])
+          Math.log2(
+            Math.cos((centers[2].lat * Math.PI) / 180) / Math.cos((centers[0].lat * Math.PI) / 180),
+          ))
     }
     bind:bearing={
       () => bearings[2], (value) => (bearings = [bearings[0], bearings[1], value, bearings[3]])
@@ -205,7 +158,7 @@
     <Projection type="globe" />
   </MapLibre>
   <MapLibre
-    style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    style="https://demotiles.maplibre.org/style.json"
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(" +
       height / 2 +
       "px, " +
@@ -218,26 +171,17 @@
     bind:center={centers[3]}
     bind:map={maps[3]}
     bind:zoom={
-      () => zooms[3],
+      () =>
+        zoom -
+        Math.log2(
+          Math.cos((centers[0].lat * Math.PI) / 180) / Math.cos((centers[3].lat * Math.PI) / 180),
+        ),
       (value) =>
-        (zooms = [
+        (zoom =
           value -
-            Math.log2(
-              Math.cos((centers[3].lat * Math.PI) / 180) /
-                Math.cos((centers[0].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[3].lat * Math.PI) / 180) /
-                Math.cos((centers[1].lat * Math.PI) / 180),
-            ),
-          value -
-            Math.log2(
-              Math.cos((centers[3].lat * Math.PI) / 180) /
-                Math.cos((centers[2].lat * Math.PI) / 180),
-            ),
-          value,
-        ])
+          Math.log2(
+            Math.cos((centers[3].lat * Math.PI) / 180) / Math.cos((centers[0].lat * Math.PI) / 180),
+          ))
     }
     bind:bearing={
       () => bearings[3], (value) => (bearings = [bearings[0], bearings[1], bearings[2], value])

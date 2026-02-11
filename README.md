@@ -4,9 +4,9 @@ Overlay clipped basemaps over each other.
 
 ## Known Issues
 
-- Zooming in/out is visually unstable. Panning the basemap after zooming should correctly position overlays.
+- Zooming in/out is visually unstable.
 
-- Pinch zooming in/out over an overlay is disabled.
+- Pinch-zooming over an overlay can/does move the overlay itself on mobile.
 
 - Text labels in overlays are clipped.
 

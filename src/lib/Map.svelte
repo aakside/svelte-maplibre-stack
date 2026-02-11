@@ -1,152 +1,98 @@
 <script lang="ts">
-  import { center } from "@turf/turf";
   import type { Polygon } from "geojson";
-  import maplibregl, { type FlyToOptions } from "maplibre-gl";
+  import maplibregl, { type MapOptions } from "maplibre-gl";
+  import { untrack } from "svelte";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
 
-  export interface Layer {
-    baseMapCenter: maplibregl.LngLat;
+  export interface FirstLayer {
     bearing: number;
-    center: maplibregl.LngLat;
-    geojson: Polygon;
+    geojson?: Polygon;
+    opacity?: number;
     style?: string | maplibregl.StyleSpecification;
-    zoom?: number;
   }
 
-  export type FirstLayer = Omit<Layer, "baseMapCenter" | "geojson" | "zoom"> & {
-    geojson?: Polygon;
-    zoom: number;
-  };
+  export interface OverlayLayer extends Omit<FirstLayer, "geojson"> {
+    /**
+     * The position on the base map that the overlay layer should be anchored to.
+     */
+    baseMapPosition: maplibregl.LngLat;
+    geojson: Polygon;
+    /**
+     * The point on the overlay that should be aligned with the base map position (`baseMapPosition`). This is needed to compute the center of the overlay map based on the base map's center and the layer's base map position.
+     */
+    overlayCenter: maplibregl.LngLat;
+  }
 
-  export type Layers = [FirstLayer, ...Layer[]];
+  export type Layers = [FirstLayer, ...OverlayLayer[]];
 
   interface Props {
+    center: maplibregl.LngLat;
     layers: Layers;
-    style?: string | maplibregl.StyleSpecification;
+    maxPitch?: MapOptions["maxPitch"];
+    minPitch?: MapOptions["minPitch"];
+    pitch?: MapOptions["pitch"];
+    roll?: MapOptions["roll"];
+    elevation?: MapOptions["elevation"];
+    style?: MapOptions["style"];
+    zoom?: MapOptions["zoom"];
   }
 
   let {
-    layers = $bindable(),
+    center = $bindable(),
+    elevation = $bindable(undefined),
+    layers,
+    maxPitch = $bindable(undefined),
+    minPitch = $bindable(undefined),
+    pitch = $bindable(0),
+    roll = $bindable(undefined),
     style = $bindable("https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"),
+    zoom = $bindable(5),
   }: Props = $props();
 
-  let maps: (maplibregl.Map | undefined)[] = $state([]);
+  let maps = $state<(maplibregl.Map | undefined)[]>([]);
+  let baseMapPositions = $state<maplibregl.LngLat[]>([]);
+  let bearings = $state<number[]>([]);
+  let previousBasemapBearing = $state(0);
 
-  let width = $state(0);
-  let pixelRatio = $state(1);
-  let prevBaseMapBearing = layers[0].bearing;
-  let elevation: number | undefined = $state(undefined);
-  let pitch = $state(0);
-  let roll: number | undefined = $state(undefined);
-
-  $effect(() => {
-    if (layers.length > maps.length) {
-      maps = [...maps, ...Array(layers.length - maps.length).fill(undefined)];
-    } else if (layers.length < maps.length) {
-      maps.slice(layers.length).forEach((map) => map?.remove());
-      maps = maps.slice(0, layers.length);
-    }
-  });
-
-  let layerSelectedGeometryCenters = $derived(
-    layers.map((layer, index) =>
-      maplibregl.LngLat.convert(
-        index === 0
-          ? layer.center
-          : (center(layer.geojson!).geometry.coordinates as maplibregl.LngLatLike),
-      ),
-    ),
-  );
-
-  let layerBaseMapCenterPoints = $derived(
-    layers.slice(1).map((layer) => {
-      if (!maps[0]) {
-        return { x: 0, y: 0 };
-      }
-      const _ = [layers[0].center, layers[0].zoom, pitch, width, pixelRatio];
-      return maps[0].project((layer as Layer).baseMapCenter);
-    }),
-  );
+  let mapContainerDimensions = $state<[number, number]>([0, 0]);
+  let layerBeingMoved = $state<{
+    index: number | undefined;
+    center: maplibregl.LngLat | undefined;
+  }>({ index: undefined, center: undefined });
 
   $effect.pre(() => {
-    layers.slice(1).forEach((layer, index) => {
-      $effect.pre(() => {
-        layer.zoom =
-          layers[0].zoom -
-          Math.log2(
-            Math.cos((layers[0].center.lat * Math.PI) / 180) /
-              Math.cos((layer.center.lat * Math.PI) / 180),
-          );
-      });
+    maps = layers.map(() => undefined);
+    baseMapPositions = [
+      untrack(() => center),
+      ...layers.slice(1).map((layer) => (layer as OverlayLayer).baseMapPosition),
+    ];
+    bearings = layers.map((layer) => layer.bearing);
+    previousBasemapBearing = layers[0].bearing;
+  });
 
-      $effect(() => {
-        layer.bearing += layers[0].bearing - prevBaseMapBearing;
-      });
-
-      $effect.pre(() => {
-        const map = maps[index + 1];
-        if (map) {
-          const selectedGeometryCenterPoint = map.project(layerSelectedGeometryCenters[index + 1]);
-          layer.center = map.unproject([
-            map._canvas.width / 2 / pixelRatio +
-              (selectedGeometryCenterPoint.x - layerBaseMapCenterPoints[index].x),
-            map._canvas.height / 2 / pixelRatio +
-              (selectedGeometryCenterPoint.y - layerBaseMapCenterPoints[index].y),
-          ]);
-        }
-      });
-
-      $effect(() => {
-        if (!maps[0] || !maps[index + 1]) {
-          return;
-        }
-
-        const target = maps[0].getCanvasContainer();
-        const source = maps[index + 1]!.getCanvasContainer();
-
-        const onWheel = (e: WheelEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          target.dispatchEvent(
-            new WheelEvent("wheel", {
-              bubbles: true,
-              cancelable: true,
-              deltaX: e.deltaX,
-              deltaY: e.deltaY,
-              deltaZ: e.deltaZ,
-              deltaMode: e.deltaMode,
-              clientX: e.clientX,
-              clientY: e.clientY,
-              screenX: e.screenX,
-              screenY: e.screenY,
-              ctrlKey: e.ctrlKey,
-              shiftKey: e.shiftKey,
-              altKey: e.altKey,
-              metaKey: e.metaKey,
-            }),
-          );
-        };
-
-        source.addEventListener("wheel", onWheel, { passive: false, capture: true });
-
-        return () => {
-          source.removeEventListener("wheel", onWheel, { capture: true });
-        };
-      });
+  let centers = $derived.by(() => {
+    let _ = [bearings, layerBeingMoved, zoom];
+    return maps.map((map, i) => {
+      if (i === 0) {
+        return center;
+      }
+      if (map) {
+        const baseMapPositionPoint = maps[0]!.project(baseMapPositions[i]);
+        const selectedGeometryCenterPoint = map.project((layers[i] as OverlayLayer).overlayCenter);
+        return map.unproject(
+          new maplibregl.Point(...mapContainerDimensions)
+            .div(2)
+            .add(selectedGeometryCenterPoint)
+            .sub(baseMapPositionPoint),
+        );
+      }
+      return (layers[i] as OverlayLayer).overlayCenter;
     });
   });
 
   let clipPaths = $derived<(string | undefined)[]>(
     layers.map((layer, index) => {
-      const _ = [
-        layer.center.lat,
-        layer.center.lng,
-        layers[index].zoom,
-        layer.bearing,
-        pitch,
-        width,
-      ];
+      const _ = [bearings[index], centers[index], layerBeingMoved.center, pitch, zoom];
       if (!maps[index] || !layer.geojson) {
         return undefined;
       }
@@ -167,54 +113,96 @@
         })
         .filter(Boolean)
         .join(" ");
-
       return pathData.length > 0 ? `path("${pathData}")` : undefined;
     }),
   );
 
   $effect(() => {
-    prevBaseMapBearing = layers[0].bearing;
+    previousBasemapBearing = bearings[0];
   });
-
-  export function flyTo(options: FlyToOptions, overlays: Layer[]) {
-    if (!maps[0]) return;
-    layers = [layers[0], ...overlays];
-    maps[0].flyTo(options);
-  }
-
-  export const ro = (node: Element) => {
-    const ro = new ResizeObserver(([entry]) => {
-      width = entry.contentRect.width;
-      pixelRatio = maps[0]?._overridePixelRatio ?? window.devicePixelRatio;
-    });
-    ro.observe(node);
-    return { destroy: () => ro.disconnect() };
-  };
 </script>
 
-<div style="height: 100%; width: 100%;" use:ro role="application">
-  {#each layers as layer, i (i)}
+<div style="height: 100vh; width: 100vw;" role="application">
+  {#each maps as _, i (i)}
     <MapLibre
-      style={layer.style ?? style}
-      inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; " +
-        (clipPaths[i] ? `clip-path: ${clipPaths[i]};` : undefined)}
       attributionControl={i === 0 ? undefined : false}
-      aroundCenter={i === 0}
-      bind:center={layer.center}
-      bind:bearing={layer.bearing}
-      bind:map={maps[i]}
-      bind:zoom={layer.zoom}
-      bind:pitch
-      bind:roll
+      bind:bearing={
+        () => bearings[i],
+        (value) =>
+          (bearings = bearings.map((bearing, bi) =>
+            i === bi ? value : i === 0 ? bearing + (value - previousBasemapBearing) : bearing,
+          ))
+      }
+      bind:center={
+        () => {
+          if (i === 0) return center;
+          if (layerBeingMoved.index !== i) return centers[i];
+        },
+        (value) => {
+          if (i === 0) {
+            center = value!;
+          }
+          if (layerBeingMoved.index === i) {
+            layerBeingMoved.center = value!;
+          }
+        }
+      }
       bind:elevation
-      minPitch={0}
-      maxPitch={0}
-      onmoveend={(ev) => {
-        if (i !== 0 && ev.originalEvent) {
-          const newSelectedGeometryCenterPoint = maps[i]!.project(layerSelectedGeometryCenters[i]);
-          (layer as Layer).baseMapCenter = maps[0]!.unproject(newSelectedGeometryCenterPoint);
+      inlineStyle={`
+        height: 100%;
+        margin: 0px;
+        opacity: ` +
+        (i === 0 ? 1 : (layers[i].opacity ?? 1)) +
+        "; " +
+        (clipPaths[i] ? `clip-path: ${clipPaths[i]};` : undefined) +
+        `
+        padding: 0px;
+        position: absolute;
+        width: 100%;
+      `}
+      bind:map={maps[i]}
+      {maxPitch}
+      {minPitch}
+      ondragend={(event) => {
+        layerBeingMoved.index = layerBeingMoved.index === i ? undefined : layerBeingMoved.index;
+        if (i !== 0 && event.originalEvent) {
+          const overlayCenterPoint = maps[i]!.project((layers[i] as OverlayLayer).overlayCenter);
+          baseMapPositions[i] = maps[0]!.unproject(overlayCenterPoint);
         }
       }}
+      ondragstart={() => {
+        layerBeingMoved.index = i;
+      }}
+      onrender={i === 0
+        ? () =>
+            (mapContainerDimensions = [
+              maps[i]!._container.clientWidth,
+              maps[i]!._container.clientHeight,
+            ])
+        : undefined}
+      bind:pitch
+      bind:roll
+      style={layers[i].style ?? style}
+      bind:zoom={
+        () =>
+          i === 0
+            ? zoom
+            : zoom -
+              Math.log2(
+                Math.cos((centers[0].lat * Math.PI) / 180) /
+                  Math.cos((centers[i].lat * Math.PI) / 180),
+              ),
+        (value) => {
+          zoom =
+            i === 0
+              ? value
+              : value -
+                Math.log2(
+                  Math.cos((centers[i].lat * Math.PI) / 180) /
+                    Math.cos((centers[0].lat * Math.PI) / 180),
+                );
+        }
+      }
     >
       <Projection type="globe" />
     </MapLibre>
