@@ -25,6 +25,10 @@
 
   export type Layers = [FirstLayer, ...OverlayLayer[]];
 
+  export interface MapState {
+    containerDimensions: [number, number];
+  }
+
   interface Props {
     center: maplibregl.LngLat;
     layers: Layers;
@@ -54,7 +58,8 @@
   let bearings = $state<number[]>([]);
   let previousBasemapBearing = $state(0);
 
-  let mapContainerDimensions = $state<[number, number]>([0, 0]);
+  export const mapState = $state<MapState>({ containerDimensions: [0, 0] });
+
   let layerBeingMoved = $state<{
     index: number | undefined;
     center: maplibregl.LngLat | undefined;
@@ -80,7 +85,7 @@
         const baseMapPositionPoint = maps[0]!.project(baseMapPositions[i]);
         const selectedGeometryCenterPoint = map.project((layers[i] as OverlayLayer).overlayCenter);
         return map.unproject(
-          new maplibregl.Point(...mapContainerDimensions)
+          maplibregl.Point.convert(mapState.containerDimensions)
             .div(2)
             .add(selectedGeometryCenterPoint)
             .sub(baseMapPositionPoint),
@@ -174,11 +179,12 @@
         layerBeingMoved.index = i;
       }}
       onrender={i === 0
-        ? () =>
-            (mapContainerDimensions = [
+        ? () => {
+            mapState.containerDimensions = [
               maps[i]!._container.clientWidth,
               maps[i]!._container.clientHeight,
-            ])
+            ];
+          }
         : undefined}
       bind:pitch
       bind:roll
