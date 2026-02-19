@@ -3906,13 +3906,14 @@
   ];
 
   let presetIndex = $state(0);
-  let layers = $derived(PRESETS[presetIndex].layers as [FirstLayer, ...OverlayLayer[]]);
-  let center = $derived(PRESETS[presetIndex].center);
-  let zoom = $derived(PRESETS[presetIndex].zoom);
 </script>
 
 <div style="width: 100vw; height: 100vh;">
-  <Map {center} {layers} {zoom} />
+  <Map
+    center={PRESETS[presetIndex].center}
+    layers={PRESETS[presetIndex].layers as [FirstLayer, ...OverlayLayer[]]}
+    zoom={PRESETS[presetIndex].zoom}
+  />
   <div
     style="position: absolute; top: 10px; left: 10px; z-index: 100; opacity: 0.75; padding: 5px; font-family: sans-serif;"
   >
