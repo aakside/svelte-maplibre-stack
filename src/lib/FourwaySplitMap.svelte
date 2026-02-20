@@ -2,24 +2,32 @@
   // This is a playground for testing out ideas for the Map component.
   // It is not meant to be a production-ready component.
 
-  import maplibregl from "maplibre-gl";
+  import maplibregl, { type MapOptions } from "maplibre-gl";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
 
-  const INITIAL_ZOOM = 3.5;
+  interface Props {
+    bearings?: [number, number, number, number];
+    centers?: maplibregl.LngLatLike[];
+    minZoom?: MapOptions["minZoom"];
+    zoom?: MapOptions["zoom"];
+  }
 
-  let centers = $state([
-    { lng: 137, lat: 36.5 },
-    { lng: -70, lat: 40 },
-    { lng: 70, lat: -36.5 },
-    { lng: -90, lat: -50 },
-  ]);
-  // svelte-ignore state_referenced_locally
+  let {
+    bearings = $bindable([0, 30, 60, 90]),
+    centers = $bindable([
+      { lng: 137, lat: 36.5 },
+      { lng: -70, lat: 40 },
+      { lng: 70, lat: -36.5 },
+      { lng: -90, lat: -50 },
+    ]),
+    minZoom,
+    zoom = $bindable(3),
+  }: Props = $props();
+
   let previousBasemapCenter = $state(centers[0]); // eslint-disable-line svelte/prefer-writable-derived
   $effect(() => {
     previousBasemapCenter = centers[0];
   });
-  let zoom = $state(INITIAL_ZOOM);
-  let bearings = $state([0, 30, 60, 90]);
   // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
   $effect(() => {
@@ -34,18 +42,9 @@
   const dimensions = $derived(new maplibregl.Point(width, height));
 
   let maps: (maplibregl.Map | undefined)[] = $state([undefined, undefined, undefined, undefined]);
-
-  export const ro = (node: Element) => {
-    const ro = new ResizeObserver(([entry]) => {
-      width = entry.contentRect.width;
-      height = entry.contentRect.height;
-    });
-    ro.observe(node);
-    return { destroy: () => ro.disconnect() };
-  };
 </script>
 
-<div use:ro role="application" style="height: 100%; width: 100%;">
+<div role="application" style="height: 100%; width: 100%;">
   <MapLibre
     style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(0px, " +
@@ -83,6 +82,11 @@
     bind:elevation
     minPitch={0}
     maxPitch={0}
+    {minZoom}
+    onrender={() => {
+      width = maps[0]!._container.clientWidth;
+      height = maps[0]!._container.clientHeight;
+    }}
     attributionControl={false}
   >
     <Projection type="globe" />
@@ -119,6 +123,7 @@
     bind:elevation
     minPitch={0}
     maxPitch={0}
+    {minZoom}
     attributionControl={false}
   >
     <Projection type="globe" />
@@ -155,6 +160,7 @@
     bind:elevation
     minPitch={0}
     maxPitch={0}
+    {minZoom}
     attributionControl={false}
   >
     <Projection type="globe" />
@@ -193,6 +199,7 @@
     bind:elevation
     minPitch={0}
     maxPitch={0}
+    {minZoom}
     attributionControl={false}
   >
     <Projection type="globe" />
