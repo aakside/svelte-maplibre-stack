@@ -1,8 +1,12 @@
 <script lang="ts">
   import type { Polygon } from "geojson";
   import maplibregl, { type MapOptions } from "maplibre-gl";
-  import { untrack } from "svelte";
+  import { createEventDispatcher, untrack } from "svelte";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
+
+  export interface CustomEvents {
+    resize: { containerDimensions: [number, number] };
+  }
 
   export interface FirstLayer {
     bearing: number;
@@ -65,8 +69,15 @@
     center: maplibregl.LngLat | undefined;
   }>({ index: undefined, center: undefined });
 
+  const dispatch = createEventDispatcher();
+
   $effect.pre(() => {
-    maps = layers.map(() => undefined);
+    if (layers.length > maps.length) {
+      maps = [...maps, ...Array(layers.length - maps.length).fill(undefined)];
+    } else if (layers.length < maps.length) {
+      maps.slice(layers.length).forEach((map) => map?.remove());
+      maps = maps.slice(0, layers.length);
+    }
     baseMapPositions = [
       untrack(() => center),
       ...layers.slice(1).map((layer) => (layer as OverlayLayer).baseMapPosition),
@@ -184,6 +195,7 @@
               maps[i]!._container.clientWidth,
               maps[i]!._container.clientHeight,
             ];
+            dispatch("resize", { containerDimensions: mapState.containerDimensions });
           }
         : undefined}
       bind:pitch
