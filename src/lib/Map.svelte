@@ -60,6 +60,7 @@
   let maps = $state<(maplibregl.Map | undefined)[]>([]);
   let baseMapPositions = $state<maplibregl.LngLat[]>([]);
   let bearings = $state<number[]>([]);
+  // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
 
   export const mapState = $state<MapState>({ containerDimensions: [0, 0] });
@@ -138,7 +139,7 @@
   });
 </script>
 
-<div style="height: 100vh; width: 100vw;" role="application">
+<div style="height: 100%; width: 100%;" role="application">
   {#each maps as _, i (i)}
     <MapLibre
       attributionControl={i === 0 ? undefined : false}

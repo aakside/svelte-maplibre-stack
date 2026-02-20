@@ -2,4 +2,6 @@
   import { FourwaySplitMap } from "$lib/index.js";
 </script>
 
-<FourwaySplitMap />
+<div style="height: 100vh; width: 100vw;">
+  <FourwaySplitMap />
+</div>

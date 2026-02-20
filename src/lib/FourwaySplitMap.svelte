@@ -13,12 +13,14 @@
     { lng: 70, lat: -36.5 },
     { lng: -90, lat: -50 },
   ]);
-  let previousBasemapCenter = $state(centers[0]);
+  // svelte-ignore state_referenced_locally
+  let previousBasemapCenter = $state(centers[0]); // eslint-disable-line svelte/prefer-writable-derived
   $effect(() => {
     previousBasemapCenter = centers[0];
   });
   let zoom = $state(INITIAL_ZOOM);
   let bearings = $state([0, 30, 60, 90]);
+  // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
   $effect(() => {
     previousBasemapBearing = bearings[0];
@@ -43,7 +45,7 @@
   };
 </script>
 
-<div use:ro role="application" style={`position: absolute; height: 100vh; width: 100vw;`}>
+<div use:ro role="application" style="height: 100%; width: 100%;">
   <MapLibre
     style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(0px, " +
