@@ -1,12 +1,8 @@
 <script lang="ts">
   import type { Polygon } from "geojson";
   import maplibregl, { type MapOptions } from "maplibre-gl";
-  import { createEventDispatcher, untrack } from "svelte";
+  import { untrack } from "svelte";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
-
-  export interface CustomEvents {
-    resize: { containerDimensions: [number, number] };
-  }
 
   export interface FirstLayer {
     bearing: number;
@@ -38,6 +34,7 @@
     layers: Layers;
     maxPitch?: MapOptions["maxPitch"];
     minPitch?: MapOptions["minPitch"];
+    onBaseMapRender?: (event: MapState) => void;
     pitch?: MapOptions["pitch"];
     roll?: MapOptions["roll"];
     elevation?: MapOptions["elevation"];
@@ -51,6 +48,7 @@
     layers,
     maxPitch = $bindable(undefined),
     minPitch = $bindable(undefined),
+    onBaseMapRender: onBaseMapRender,
     pitch = $bindable(0),
     roll = $bindable(undefined),
     style = $bindable("https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"),
@@ -70,8 +68,6 @@
     index: number | undefined;
     center: maplibregl.LngLat | undefined;
   }>({ index: undefined, center: undefined });
-
-  const dispatch = createEventDispatcher();
 
   $effect.pre(() => {
     if (layers.length > maps.length) {
@@ -200,7 +196,7 @@
                 maps[i]!._container.clientWidth,
                 maps[i]!._container.clientHeight,
               ];
-              dispatch("resize", { containerDimensions: mapState.containerDimensions });
+              onBaseMapRender && onBaseMapRender(mapState);
             }
           : undefined}
         bind:pitch
