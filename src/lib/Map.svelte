@@ -62,6 +62,7 @@
   let bearings = $state<number[]>([]);
   // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
+  let isBaseMapLoaded = $state(false);
 
   export const mapState = $state<MapState>({ containerDimensions: [0, 0] });
 
@@ -93,9 +94,10 @@
       if (i === 0) {
         return center;
       }
+      const layer = layers[i] as OverlayLayer;
       if (map) {
         const baseMapPositionPoint = maps[0]!.project(baseMapPositions[i]);
-        const selectedGeometryCenterPoint = map.project((layers[i] as OverlayLayer).overlayCenter);
+        const selectedGeometryCenterPoint = map.project(layer.overlayCenter);
         return map.unproject(
           maplibregl.Point.convert(mapState.containerDimensions)
             .div(2)
@@ -103,7 +105,7 @@
             .sub(baseMapPositionPoint),
         );
       }
-      return (layers[i] as OverlayLayer).overlayCenter;
+      return layer.overlayCenter;
     });
   });
 
@@ -141,89 +143,92 @@
 
 <div style="height: 100%; width: 100%;" role="application">
   {#each maps as _, i (i)}
-    <MapLibre
-      attributionControl={i === 0 ? undefined : false}
-      bind:bearing={
-        () => bearings[i],
-        (value) =>
-          (bearings = bearings.map((bearing, bi) =>
-            i === bi ? value : i === 0 ? bearing + (value - previousBasemapBearing) : bearing,
-          ))
-      }
-      bind:center={
-        () => {
-          if (i === 0) return center;
-          if (layerBeingMoved.index !== i) return centers[i];
-        },
-        (value) => {
-          if (i === 0) {
-            center = value!;
-          }
-          if (layerBeingMoved.index === i) {
-            layerBeingMoved.center = value!;
+    {#if isBaseMapLoaded || i === 0}
+      <MapLibre
+        attributionControl={i === 0 ? undefined : false}
+        bind:bearing={
+          () => bearings[i],
+          (value) =>
+            (bearings = bearings.map((bearing, bi) =>
+              i === bi ? value : i === 0 ? bearing + (value - previousBasemapBearing) : bearing,
+            ))
+        }
+        bind:center={
+          () => {
+            if (i === 0) return center;
+            if (layerBeingMoved.index !== i) return centers[i];
+          },
+          (value) => {
+            if (i === 0) {
+              center = value!;
+            }
+            if (layerBeingMoved.index === i) {
+              layerBeingMoved.center = value!;
+            }
           }
         }
-      }
-      bind:elevation
-      inlineStyle={`
+        bind:elevation
+        inlineStyle={`
         height: 100%;
         margin: 0px;
         opacity: ` +
-        (i === 0 ? 1 : (layers[i].opacity ?? 1)) +
-        "; " +
-        (clipPaths[i] ? `clip-path: ${clipPaths[i]};` : undefined) +
-        `
+          (i === 0 ? 1 : (layers[i].opacity ?? 1)) +
+          "; " +
+          (clipPaths[i] ? `clip-path: ${clipPaths[i]};` : undefined) +
+          `
         padding: 0px;
         position: absolute;
         width: 100%;
       `}
-      bind:map={maps[i]}
-      {maxPitch}
-      {minPitch}
-      ondragend={(event) => {
-        layerBeingMoved.index = layerBeingMoved.index === i ? undefined : layerBeingMoved.index;
-        if (i !== 0 && event.originalEvent) {
-          const overlayCenterPoint = maps[i]!.project((layers[i] as OverlayLayer).overlayCenter);
-          baseMapPositions[i] = maps[0]!.unproject(overlayCenterPoint);
-        }
-      }}
-      ondragstart={() => {
-        layerBeingMoved.index = i;
-      }}
-      onrender={i === 0
-        ? () => {
-            mapState.containerDimensions = [
-              maps[i]!._container.clientWidth,
-              maps[i]!._container.clientHeight,
-            ];
-            dispatch("resize", { containerDimensions: mapState.containerDimensions });
+        bind:map={maps[i]}
+        {maxPitch}
+        {minPitch}
+        ondragend={(event) => {
+          layerBeingMoved.index = layerBeingMoved.index === i ? undefined : layerBeingMoved.index;
+          if (i !== 0 && event.originalEvent) {
+            const overlayCenterPoint = maps[i]!.project((layers[i] as OverlayLayer).overlayCenter);
+            baseMapPositions[i] = maps[0]!.unproject(overlayCenterPoint);
           }
-        : undefined}
-      bind:pitch
-      bind:roll
-      style={layers[i].style ?? style}
-      bind:zoom={
-        () =>
-          i === 0
-            ? zoom
-            : zoom -
-              Math.log2(
-                Math.cos((centers[0].lat * Math.PI) / 180) /
-                  Math.cos((centers[i].lat * Math.PI) / 180),
-              ),
-        (value) => {
-          zoom =
+        }}
+        ondragstart={() => {
+          layerBeingMoved.index = i;
+        }}
+        onload={i === 0 ? () => (isBaseMapLoaded = true) : undefined}
+        onrender={i === 0
+          ? () => {
+              mapState.containerDimensions = [
+                maps[i]!._container.clientWidth,
+                maps[i]!._container.clientHeight,
+              ];
+              dispatch("resize", { containerDimensions: mapState.containerDimensions });
+            }
+          : undefined}
+        bind:pitch
+        bind:roll
+        style={layers[i].style ?? style}
+        bind:zoom={
+          () =>
             i === 0
-              ? value
-              : value -
+              ? zoom
+              : zoom -
                 Math.log2(
-                  Math.cos((centers[i].lat * Math.PI) / 180) /
-                    Math.cos((centers[0].lat * Math.PI) / 180),
-                );
+                  Math.cos((centers[0].lat * Math.PI) / 180) /
+                    Math.cos((centers[i].lat * Math.PI) / 180),
+                ),
+          (value) => {
+            zoom =
+              i === 0
+                ? value
+                : value -
+                  Math.log2(
+                    Math.cos((centers[i].lat * Math.PI) / 180) /
+                      Math.cos((centers[0].lat * Math.PI) / 180),
+                  );
+          }
         }
-      }
-    >
-      <Projection type="globe" />
-    </MapLibre>
+      >
+        <Projection type="globe" />
+      </MapLibre>
+    {/if}
   {/each}
 </div>
