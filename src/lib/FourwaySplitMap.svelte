@@ -7,8 +7,12 @@
 
   interface Props {
     bearings?: [number, number, number, number];
-    centers?: maplibregl.LngLatLike[];
+    centers?: Array<{
+      lng: number;
+      lat: number;
+    }>;
     minZoom?: MapOptions["minZoom"];
+    styles?: [string, string, string, string];
     zoom?: MapOptions["zoom"];
   }
 
@@ -21,6 +25,12 @@
       { lng: -90, lat: -50 },
     ]),
     minZoom,
+    styles = $bindable([
+      "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+      "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+      "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+      "https://demotiles.maplibre.org/style.json",
+    ]),
     zoom = $bindable(3),
   }: Props = $props();
 
@@ -46,7 +56,7 @@
 
 <div role="application" style="height: 100%; width: 100%;">
   <MapLibre
-    style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+    style={styles[0]}
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(0px, " +
       width / 2 +
       "px, " +
@@ -92,7 +102,7 @@
     <Projection type="globe" />
   </MapLibre>
   <MapLibre
-    style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    style={styles[1]}
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(0px, " +
       width +
       "px, " +
@@ -129,7 +139,7 @@
     <Projection type="globe" />
   </MapLibre>
   <MapLibre
-    style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+    style={styles[2]}
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(" +
       height / 2 +
       "px, " +
@@ -166,7 +176,7 @@
     <Projection type="globe" />
   </MapLibre>
   <MapLibre
-    style="https://demotiles.maplibre.org/style.json"
+    style={styles[3]}
     inlineStyle={"height: 100%; width: 100%; margin: 0px; padding: 0px; position: absolute; clip: rect(" +
       height / 2 +
       "px, " +
