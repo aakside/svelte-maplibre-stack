@@ -196,7 +196,9 @@
                 maps[i]!._container.clientWidth,
                 maps[i]!._container.clientHeight,
               ];
-              onBaseMapRender && onBaseMapRender(mapState);
+              if (onBaseMapRender) {
+                onBaseMapRender(mapState);
+              }
             }
           : undefined}
         bind:pitch
