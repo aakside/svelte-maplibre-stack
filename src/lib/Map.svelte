@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Polygon } from "geojson";
   import maplibregl, { type MapOptions } from "maplibre-gl";
-  import { untrack } from "svelte";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
 
   export interface FirstLayer {
@@ -11,11 +10,15 @@
     style?: string | maplibregl.StyleSpecification;
   }
 
-  export interface OverlayLayer extends Omit<FirstLayer, "geojson"> {
+  export interface OverlayLayer extends Omit<FirstLayer, "center" | "geojson"> {
     /**
      * The position on the base map that the overlay layer should be anchored to.
      */
     baseMapPosition: maplibregl.LngLat;
+    /**
+     * The center of the overlay map initially used to guide the calculation of the overlay map's center.
+     */
+    center?: maplibregl.LngLat;
     geojson: Polygon;
     /**
      * The point on the overlay that should be aligned with the base map position (`baseMapPosition`). This is needed to compute the center of the overlay map based on the base map's center and the layer's base map position.
@@ -26,7 +29,7 @@
   export type Layers = [FirstLayer, ...OverlayLayer[]];
 
   export interface MapState {
-    containerDimensions: [number, number];
+    containerDimensions: { x: number; y: number };
   }
 
   interface Props {
@@ -34,7 +37,6 @@
     layers: Layers;
     maxPitch?: MapOptions["maxPitch"];
     minPitch?: MapOptions["minPitch"];
-    onBaseMapRender?: (event: MapState) => void;
     pitch?: MapOptions["pitch"];
     roll?: MapOptions["roll"];
     elevation?: MapOptions["elevation"];
@@ -45,10 +47,9 @@
   let {
     center = $bindable(),
     elevation = $bindable(undefined),
-    layers,
+    layers = $bindable(),
     maxPitch = $bindable(undefined),
     minPitch = $bindable(undefined),
-    onBaseMapRender: onBaseMapRender,
     pitch = $bindable(0),
     roll = $bindable(undefined),
     style = $bindable("https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"),
@@ -56,13 +57,12 @@
   }: Props = $props();
 
   let maps = $state<(maplibregl.Map | undefined)[]>([]);
-  let baseMapPositions = $state<maplibregl.LngLat[]>([]);
   let bearings = $state<number[]>([]);
   // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
   let isBaseMapLoaded = $state(false);
 
-  export const mapState = $state<MapState>({ containerDimensions: [0, 0] });
+  export const mapState = $state<MapState>({ containerDimensions: { x: 0, y: 0 } });
 
   let layerBeingMoved = $state<{
     index: number | undefined;
@@ -76,51 +76,53 @@
       maps.slice(layers.length).forEach((map) => map?.remove());
       maps = maps.slice(0, layers.length);
     }
-    baseMapPositions = [
-      untrack(() => center),
-      ...layers.slice(1).map((layer) => (layer as OverlayLayer).baseMapPosition),
-    ];
     bearings = layers.map((layer) => layer.bearing);
     previousBasemapBearing = layers[0].bearing;
   });
 
   let centers = $derived.by(() => {
-    let _ = [bearings, layerBeingMoved, zoom];
+    let _ = [bearings, layerBeingMoved, layerBeingMoved.index, zoom];
     return maps.map((map, i) => {
       if (i === 0) {
         return center;
       }
       const layer = layers[i] as OverlayLayer;
       if (map) {
-        const baseMapPositionPoint = maps[0]!.project(baseMapPositions[i]);
-        const selectedGeometryCenterPoint = map.project(layer.overlayCenter);
+        const baseMapPositionPoint = maps[0]!.project(layer.baseMapPosition);
+        const overlayCenterPoint = map.project(layer.overlayCenter);
         return map.unproject(
-          maplibregl.Point.convert(mapState.containerDimensions)
+          new maplibregl.Point(mapState.containerDimensions.x, mapState.containerDimensions.y)
             .div(2)
-            .add(selectedGeometryCenterPoint)
+            .add(overlayCenterPoint)
             .sub(baseMapPositionPoint),
         );
       }
-      return layer.overlayCenter;
+      return layer.center ?? layer.overlayCenter;
+    });
+  });
+
+  $effect(() => {
+    centers.forEach((center, i) => {
+      if (i !== 0) (layers[i] as OverlayLayer).center = center;
     });
   });
 
   let clipPaths = $derived<(string | undefined)[]>(
-    layers.map((layer, index) => {
-      const _ = [bearings[index], centers[index], layerBeingMoved.center, pitch, zoom];
-      if (!maps[index] || !layer.geojson) {
+    maps.map((map, index) => {
+      const _ = [bearings[index], center, centers[index], layerBeingMoved.center, pitch, zoom];
+      if (!map || !layers[index].geojson) {
         return undefined;
       }
-      const pathData = layer.geojson.coordinates
+      const pathData = layers[index].geojson.coordinates
         .map((ring) => {
           if (ring.length === 0) {
             return "";
           }
           const [start, ...rest] = ring;
-          const startPoint = maps[index]!.project(start as maplibregl.LngLatLike);
+          const startPoint = map.project(start as maplibregl.LngLatLike);
           const segments = rest
             .map(([lng, lat]) => {
-              const point = maps[index]!.project([lng, lat]);
+              const point = map.project([lng, lat]);
               return `L ${point.x} ${point.y}`;
             })
             .join(" ");
@@ -151,8 +153,7 @@
         }
         bind:center={
           () => {
-            if (i === 0) return center;
-            if (layerBeingMoved.index !== i) return centers[i];
+            if (i === 0 || layerBeingMoved.index !== i) return centers[i];
           },
           (value) => {
             if (i === 0) {
@@ -183,22 +184,23 @@
           layerBeingMoved.index = layerBeingMoved.index === i ? undefined : layerBeingMoved.index;
           if (i !== 0 && event.originalEvent) {
             const overlayCenterPoint = maps[i]!.project((layers[i] as OverlayLayer).overlayCenter);
-            baseMapPositions[i] = maps[0]!.unproject(overlayCenterPoint);
+            (layers[i] as OverlayLayer).baseMapPosition = maps[0]!.unproject(overlayCenterPoint);
           }
         }}
         ondragstart={() => {
           layerBeingMoved.index = i;
         }}
-        onload={i === 0 ? () => (isBaseMapLoaded = true) : undefined}
-        onrender={i === 0
+        onload={i === 0
           ? () => {
-              mapState.containerDimensions = [
-                maps[i]!._container.clientWidth,
-                maps[i]!._container.clientHeight,
-              ];
-              if (onBaseMapRender) {
-                onBaseMapRender(mapState);
-              }
+              mapState.containerDimensions.x = maps[i]!._container.clientWidth;
+              mapState.containerDimensions.y = maps[i]!._container.clientHeight;
+              isBaseMapLoaded = true;
+            }
+          : undefined}
+        onresize={i === 0
+          ? () => {
+              mapState.containerDimensions.x = maps[i]!._container.clientWidth;
+              mapState.containerDimensions.y = maps[i]!._container.clientHeight;
             }
           : undefined}
         bind:pitch
