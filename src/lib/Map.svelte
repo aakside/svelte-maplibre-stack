@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Polygon } from "geojson";
   import maplibregl, { type MapOptions } from "maplibre-gl";
+  import { untrack } from "svelte";
   import { MapLibre, Projection } from "svelte-maplibre-gl";
 
   export interface FirstLayer {
@@ -29,6 +30,8 @@
   export type Layers = [FirstLayer, ...OverlayLayer[]];
 
   export interface MapState {
+    baseMapPositions: maplibregl.LngLat[];
+    bearings: number[];
     containerDimensions: { x: number; y: number };
   }
 
@@ -47,7 +50,7 @@
   let {
     center = $bindable(),
     elevation = $bindable(undefined),
-    layers = $bindable(),
+    layers,
     maxPitch = $bindable(undefined),
     minPitch = $bindable(undefined),
     pitch = $bindable(0),
@@ -57,38 +60,48 @@
   }: Props = $props();
 
   let maps = $state<(maplibregl.Map | undefined)[]>([]);
-  let bearings = $state<number[]>([]);
   // eslint-disable-next-line svelte/prefer-writable-derived
   let previousBasemapBearing = $state(0);
   let isBaseMapLoaded = $state(false);
 
-  export const mapState = $state<MapState>({ containerDimensions: { x: 0, y: 0 } });
+  export const mapState = $state<MapState>({
+    baseMapPositions: [],
+    bearings: [],
+    containerDimensions: { x: 0, y: 0 },
+  });
 
+  let overlayGeneration = $state(0);
   let layerBeingMoved = $state<{
     index: number | undefined;
     center: maplibregl.LngLat | undefined;
   }>({ index: undefined, center: undefined });
 
   $effect.pre(() => {
-    if (layers.length > maps.length) {
-      maps = [...maps, ...Array(layers.length - maps.length).fill(undefined)];
-    } else if (layers.length < maps.length) {
-      maps.slice(layers.length).forEach((map) => map?.remove());
-      maps = maps.slice(0, layers.length);
-    }
-    bearings = layers.map((layer) => layer.bearing);
+    untrack(() => {
+      if (maps.length > 1) {
+        overlayGeneration++;
+        maps = [maps[0], ...layers.slice(1).map(() => undefined)];
+      } else {
+        maps = layers.map(() => undefined);
+      }
+    });
+    mapState.baseMapPositions = [
+      untrack(() => center),
+      ...layers.slice(1).map((layer) => (layer as OverlayLayer).baseMapPosition),
+    ];
+    mapState.bearings = layers.map((layer) => layer.bearing);
     previousBasemapBearing = layers[0].bearing;
   });
 
   let centers = $derived.by(() => {
-    let _ = [bearings, layerBeingMoved, layerBeingMoved.index, zoom];
+    let _ = [mapState.bearings, layerBeingMoved.index, zoom];
     return maps.map((map, i) => {
       if (i === 0) {
         return center;
       }
       const layer = layers[i] as OverlayLayer;
       if (map) {
-        const baseMapPositionPoint = maps[0]!.project(layer.baseMapPosition);
+        const baseMapPositionPoint = maps[0]!.project(mapState.baseMapPositions[i]);
         const overlayCenterPoint = map.project(layer.overlayCenter);
         return map.unproject(
           new maplibregl.Point(mapState.containerDimensions.x, mapState.containerDimensions.y)
@@ -101,16 +114,10 @@
     });
   });
 
-  $effect(() => {
-    centers.forEach((center, i) => {
-      if (i !== 0) (layers[i] as OverlayLayer).center = center;
-    });
-  });
-
   let clipPaths = $derived<(string | undefined)[]>(
     maps.map((map, index) => {
-      const _ = [bearings[index], center, centers[index], layerBeingMoved.center, pitch, zoom];
-      if (!map || !layers[index].geojson) {
+      const _ = [mapState.bearings[index], centers[index], layerBeingMoved.center, pitch, zoom];
+      if (!maps[index] || !layers[index].geojson) {
         return undefined;
       }
       const pathData = layers[index].geojson.coordinates
@@ -119,10 +126,10 @@
             return "";
           }
           const [start, ...rest] = ring;
-          const startPoint = map.project(start as maplibregl.LngLatLike);
+          const startPoint = map!.project(start as maplibregl.LngLatLike);
           const segments = rest
             .map(([lng, lat]) => {
-              const point = map.project([lng, lat]);
+              const point = map!.project([lng, lat]);
               return `L ${point.x} ${point.y}`;
             })
             .join(" ");
@@ -135,19 +142,19 @@
   );
 
   $effect(() => {
-    previousBasemapBearing = bearings[0];
+    previousBasemapBearing = mapState.bearings[0];
   });
 </script>
 
 <div style="height: 100%; width: 100%;" role="application">
-  {#each maps as _, i (i)}
+  {#each maps as _, i (i === 0 ? "base" : `overlay-${i}-${overlayGeneration}`)}
     {#if isBaseMapLoaded || i === 0}
       <MapLibre
         attributionControl={i === 0 ? undefined : false}
         bind:bearing={
-          () => bearings[i],
+          () => mapState.bearings[i],
           (value) =>
-            (bearings = bearings.map((bearing, bi) =>
+            (mapState.bearings = mapState.bearings.map((bearing, bi) =>
               i === bi ? value : i === 0 ? bearing + (value - previousBasemapBearing) : bearing,
             ))
         }
@@ -184,7 +191,7 @@
           layerBeingMoved.index = layerBeingMoved.index === i ? undefined : layerBeingMoved.index;
           if (i !== 0 && event.originalEvent) {
             const overlayCenterPoint = maps[i]!.project((layers[i] as OverlayLayer).overlayCenter);
-            (layers[i] as OverlayLayer).baseMapPosition = maps[0]!.unproject(overlayCenterPoint);
+            mapState.baseMapPositions[i] = maps[0]!.unproject(overlayCenterPoint);
           }
         }}
         ondragstart={() => {
