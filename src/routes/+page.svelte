@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { Map, type FirstLayer, type OverlayLayer } from "$lib/index.js";
+  import { Map, MapState, type Layers } from "$lib/index.js";
   import { type Polygon } from "geojson";
-  import maplibregl from "maplibre-gl";
 
   // The following JSON object was obtained from Nominatim's reverse geocoding API
   const MANHATTAN = {
@@ -3859,61 +3858,58 @@
       layers: [
         {
           bearing: 0,
+          center: { lng: -87.57254682496153, lat: 41.874130140204784 },
           style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+          zoom: 12.122461330354653,
         },
         {
-          baseMapPosition: maplibregl.LngLat.convert({
-            lng: -87.57254682496153,
-            lat: 41.874130140204784,
-          }),
+          baseMapPosition: { lng: -87.57254682496153, lat: 41.874130140204784 },
           bearing: 28.9,
-          overlayCenter: new maplibregl.LngLat(Number(MANHATTAN.lon), Number(MANHATTAN.lat)),
+          // center: maplibregl.LngLat.convert({
+          //   lng: -74.02511672470418,
+          //   lat: 40.74663655767597,
+          // }),
+          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
           geojson: MANHATTAN.geojson as Polygon,
         },
         {
-          baseMapPosition: maplibregl.LngLat.convert({
-            lng: -87.51800891723839,
-            lat: 41.87361112466857,
-          }),
+          baseMapPosition: { lng: -87.51800891723839, lat: 41.87361112466857 },
           bearing: 208.9,
-          overlayCenter: new maplibregl.LngLat(Number(MANHATTAN.lon), Number(MANHATTAN.lat)),
+          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
           geojson: MANHATTAN.geojson as Polygon,
         },
       ],
-      zoom: 12.122461330354653,
-      center: maplibregl.LngLat.convert({ lng: -87.57254682496153, lat: 41.874130140204784 }),
     },
 
     {
       layers: [
         {
           bearing: 5,
+          center: { lng: -122.40765301369044, lat: 37.76263010247458 },
+          zoom: 10,
         },
         {
-          baseMapPosition: maplibregl.LngLat.convert({
+          baseMapPosition: {
             lng: -122.29194048242766,
             lat: 37.73140755999954,
-          }),
+          },
           bearing: 63.7163475596982,
           geojson: MANHATTAN.geojson as Polygon,
           opacity: 1,
-          overlayCenter: new maplibregl.LngLat(Number(MANHATTAN.lon), Number(MANHATTAN.lat)),
+          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
         },
       ],
-      zoom: 10,
-      center: maplibregl.LngLat.convert({ lng: -122.40765301369044, lat: 37.76263010247458 }),
     },
   ];
 
   let presetIndex = $state(0);
+  let mapState = $derived.by(() => {
+    return new MapState(PRESETS[presetIndex].layers as Layers);
+  });
 </script>
 
 <div style="width: 100vw; height: 100vh;">
-  <Map
-    center={PRESETS[presetIndex].center}
-    layers={PRESETS[presetIndex].layers as [FirstLayer, ...OverlayLayer[]]}
-    zoom={PRESETS[presetIndex].zoom}
-  />
+  <Map bind:mapState />
   <div
     style="position: absolute; top: 10px; left: 10px; z-index: 100; opacity: 0.75; padding: 5px; font-family: sans-serif;"
   >
