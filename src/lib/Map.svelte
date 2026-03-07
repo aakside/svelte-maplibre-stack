@@ -10,7 +10,7 @@
 </script>
 
 <div style="height: 100%; width: 100%;" role="application">
-  {#each mapState.layers as layer, i (i)}
+  {#each mapState.layers as layer, i (layer.id)}
     {#if mapState.isBaseMapLoaded || i === 0}
       <MapLibre
         attributionControl={i === 0 ? undefined : false}
@@ -42,18 +42,15 @@
         }
         bind:elevation={mapState.elevation}
         inlineStyle={`
-        height: 100%;
-        margin: 0px;
-        opacity: ` +
-          (i === 0 ? 1 : (layer.opacity ?? 1)) +
-          "; " +
-          (layer.clipPath ? `clip-path: ${layer.clipPath};` : undefined) +
-          `
-        padding: 0px;
-        position: absolute;
-        width: 100%;
-        visibility: ${layer.visible ? "visible" : "hidden"};
-      `}
+          clip-path: ${layer.clipPath};
+          height: 100%;
+          margin: 0px;
+          opacity: ${layer.opacity};
+          padding: 0px;
+          position: absolute;
+          width: 100%;
+          visibility: ${layer.visible ? "visible" : "hidden"};
+        `}
         bind:map={layer.map}
         maxPitch={mapState.maxPitch}
         minPitch={mapState.minPitch}

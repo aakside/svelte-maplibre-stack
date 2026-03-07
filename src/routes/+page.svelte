@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Map, MapState, type Layers } from "$lib/index.js";
+  import { Map, MapState, type LayerConfigs } from "$lib/index.js";
   import { type Polygon } from "geojson";
 
   // The following JSON object was obtained from Nominatim's reverse geocoding API
@@ -3853,58 +3853,53 @@
     },
   };
 
-  const PRESETS = [
-    {
-      layers: [
-        {
-          bearing: 0,
-          center: { lng: -87.57254682496153, lat: 41.874130140204784 },
-          style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-          zoom: 12.122461330354653,
+  const LAYER_CONFIG_PRESETS = [
+    [
+      {
+        bearing: 0,
+        center: { lng: -87.57254682496153, lat: 41.874130140204784 },
+        style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        zoom: 12.122461330354653,
+      },
+      {
+        baseMapPosition: { lng: -87.57254682496153, lat: 41.874130140204784 },
+        bearing: 28.9,
+        // center: maplibregl.LngLat.convert({
+        //   lng: -74.02511672470418,
+        //   lat: 40.74663655767597,
+        // }),
+        overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
+        geojson: MANHATTAN.geojson as Polygon,
+      },
+      {
+        baseMapPosition: { lng: -87.51800891723839, lat: 41.87361112466857 },
+        bearing: 208.9,
+        overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
+        geojson: MANHATTAN.geojson as Polygon,
+      },
+    ],
+    [
+      {
+        bearing: 5,
+        center: { lng: -122.40765301369044, lat: 37.76263010247458 },
+        zoom: 10,
+      },
+      {
+        baseMapPosition: {
+          lng: -122.29194048242766,
+          lat: 37.73140755999954,
         },
-        {
-          baseMapPosition: { lng: -87.57254682496153, lat: 41.874130140204784 },
-          bearing: 28.9,
-          // center: maplibregl.LngLat.convert({
-          //   lng: -74.02511672470418,
-          //   lat: 40.74663655767597,
-          // }),
-          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
-          geojson: MANHATTAN.geojson as Polygon,
-        },
-        {
-          baseMapPosition: { lng: -87.51800891723839, lat: 41.87361112466857 },
-          bearing: 208.9,
-          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
-          geojson: MANHATTAN.geojson as Polygon,
-        },
-      ],
-    },
-
-    {
-      layers: [
-        {
-          bearing: 5,
-          center: { lng: -122.40765301369044, lat: 37.76263010247458 },
-          zoom: 10,
-        },
-        {
-          baseMapPosition: {
-            lng: -122.29194048242766,
-            lat: 37.73140755999954,
-          },
-          bearing: 63.7163475596982,
-          geojson: MANHATTAN.geojson as Polygon,
-          opacity: 1,
-          overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
-        },
-      ],
-    },
+        bearing: 63.7163475596982,
+        geojson: MANHATTAN.geojson as Polygon,
+        opacity: 1,
+        overlayCenter: { lng: Number(MANHATTAN.lon), lat: Number(MANHATTAN.lat) },
+      },
+    ],
   ];
 
   let presetIndex = $state(0);
   let mapState = $derived.by(() => {
-    return new MapState(PRESETS[presetIndex].layers as Layers);
+    return new MapState(LAYER_CONFIG_PRESETS[presetIndex] as LayerConfigs);
   });
 </script>
 
@@ -3913,6 +3908,8 @@
   <div
     style="position: absolute; top: 10px; left: 10px; z-index: 100; opacity: 0.75; padding: 5px; font-family: sans-serif;"
   >
-    <button onclick={() => (presetIndex = (presetIndex + 1) % PRESETS.length)}>Next</button>
+    <button onclick={() => (presetIndex = (presetIndex + 1) % LAYER_CONFIG_PRESETS.length)}
+      >Next</button
+    >
   </div>
 </div>

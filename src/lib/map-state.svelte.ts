@@ -1,4 +1,4 @@
-import type { Polygon } from "geojson";
+import type { MultiPolygon, Polygon } from "geojson";
 import maplibregl, { type MapOptions } from "maplibre-gl";
 
 export type LatLng = { lat: number; lng: number };
@@ -6,9 +6,11 @@ export type LatLng = { lat: number; lng: number };
 export interface FirstLayer {
   bearing: number;
   center: LatLng;
-  geojson?: Polygon;
+  geojson?: Polygon | MultiPolygon;
   opacity?: number;
-  style?: string | maplibregl.StyleSpecification;
+  pitch?: MapOptions["pitch"];
+  style?: MapOptions["style"];
+  visible: boolean;
   zoom?: number;
 }
 
@@ -21,14 +23,18 @@ export interface OverlayLayer extends Omit<FirstLayer, "center" | "geojson"> {
    * The center of the overlay map initially used to guide the calculation of the overlay map's center.
    */
   center?: LatLng;
-  geojson: Polygon;
+  geojson: Polygon | MultiPolygon;
   /**
    * The point on the overlay that should be aligned with the base map position (`baseMapPosition`). This is needed to compute the center of the overlay map based on the base map's center and the layer's base map position.
    */
   overlayCenter: LatLng;
 }
 
-export type Layers = [FirstLayer, ...OverlayLayer[]];
+export type LayerConfigs = [FirstLayer, ...OverlayLayer[]];
+
+interface ToLayerConfigsOptions {
+  includeGeojson?: boolean;
+}
 
 export class MapState {
   layers: MapLayer[];
@@ -40,8 +46,8 @@ export class MapState {
   center: LatLng;
   maxPitch?: MapOptions["maxPitch"];
   minPitch?: MapOptions["minPitch"];
-  pitch?: MapOptions["pitch"] = $state(undefined);
-  roll?: MapOptions["roll"] = $state(undefined);
+  pitch: MapOptions["pitch"];
+  roll: MapOptions["roll"] = $state(undefined);
   elevation?: MapOptions["elevation"] = $state(undefined);
   style: MapOptions["style"] = $state(
     "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
@@ -51,47 +57,106 @@ export class MapState {
   isBaseMapLoaded = $state(false);
 
   constructor(
-    layers: Layers,
+    layerConfigs: LayerConfigs,
     minPitch?: MapOptions["minPitch"],
     maxPitch?: MapOptions["maxPitch"],
   ) {
     this.minPitch = $state(minPitch);
     this.maxPitch = $state(maxPitch);
-    this.zoom = $state(layers[0].zoom ?? 4);
-    const centerLngLat = maplibregl.LngLat.convert(layers[0].center ?? { lat: 0, lng: 0 });
+    this.pitch = $state(layerConfigs[0].pitch);
+    this.zoom = $state(layerConfigs[0].zoom ?? 4);
+    const centerLngLat = maplibregl.LngLat.convert(layerConfigs[0].center ?? { lat: 0, lng: 0 });
     this.center = $state({ lat: centerLngLat.lat, lng: centerLngLat.lng });
-    this.layers = $state(layers.map((layer, index) => new MapLayer(this, index, layer)));
+    this.layers = $state(
+      layerConfigs.map((layerConfig, index) => new MapLayer(this, index, layerConfig)),
+    );
     $effect.pre(() => {
       this.previousBasemapBearing = this.layers[0].bearing;
     });
   }
+
+  /** Add an overlay layer to the map. */
+  addLayer(layerConfig: OverlayLayer): string {
+    const layer = new MapLayer(this, this.layers.length, layerConfig);
+    this.layers.push(layer);
+    return layer.id;
+  }
+
+  /** Reposition the base map to align with the center of the specified overlay layer. */
+  flyToLayer(index: number) {
+    if (index !== 0 && index < this.layers.length) {
+      // TODO: Compute an appropriate zoom level based on the layer's bounds.
+      this.layers[0].map?.flyTo({
+        center: this.layers[index].baseMapPosition,
+      });
+    }
+  }
+
+  /** Remove the specified overlay layer. */
+  removeLayer(index: number): string {
+    if (index !== 0 && index < this.layers.length) {
+      this.layers[index].map = undefined;
+      const removedLayer = this.layers.splice(index, 1)[0];
+      return removedLayer.id;
+    } else {
+      throw new Error("Invalid layer index");
+    }
+  }
+
+  toLayerConfigs(options: ToLayerConfigsOptions = {}): LayerConfigs {
+    const baseLayer: FirstLayer = {
+      bearing: this.layers[0].bearing,
+      center: this.center,
+      geojson: options.includeGeojson ? this.layers[0].geojson : undefined,
+      opacity: this.layers[0].opacity,
+      pitch: this.pitch,
+      style: this.layers[0].style,
+      visible: this.layers[0].visible,
+      zoom: this.zoom,
+    };
+    const overlayLayers: OverlayLayer[] = this.layers.slice(1).map((layer) => ({
+      baseMapPosition: layer.baseMapPosition,
+      bearing: layer.bearing,
+      center: layer.center,
+      geojson: options.includeGeojson ? layer.geojson : undefined,
+      opacity: layer.opacity,
+      style: layer.style,
+      overlayCenter: layer.overlayCenter,
+      visible: layer.visible,
+    })) as OverlayLayer[];
+    return [baseLayer, ...overlayLayers];
+  }
 }
 
-class MapLayer {
+export class MapLayer {
   baseMapPosition: LatLng;
   bearing: number = $state(0);
   center: LatLng;
   clipPath?: string;
+  geojson?: Polygon | MultiPolygon;
+  id: string;
   map?: maplibregl.Map = $state(undefined);
   projectionRevision: number = $state(0);
-  opacity: number = $state(1);
+  opacity: number;
   overlayCenter: LatLng;
   style?: MapOptions["style"];
   visible: boolean = $state(true);
-  protected index: number;
   private lastProjectionCameraSignature = "";
 
   constructor(
     private mapState: MapState,
     index: number,
     layerConfig: FirstLayer | OverlayLayer,
+    id?: string,
   ) {
-    this.index = index;
+    this.id = id ?? `layer-${Math.random().toString(36).slice(2)}`;
     this.baseMapPosition = $state(
       index === 0 ? layerConfig.center! : (layerConfig as OverlayLayer).baseMapPosition,
     );
     this.bearing = layerConfig.bearing;
+    this.opacity = $state(layerConfig.opacity ?? 1);
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
+    this.geojson = $state(layerConfig.geojson);
     this.style = $state(layerConfig.style);
     this.center = $derived.by(() => {
       if (index === 0) {
@@ -122,10 +187,14 @@ class MapLayer {
         mapState.pitch,
         mapState.zoom,
       ];
-      if (!this.map || !layerConfig.geojson) {
+      if (!this.map || !this.geojson) {
         return undefined;
       }
-      const pathData = layerConfig.geojson.coordinates
+      const polygonRings =
+        this.geojson.type === "MultiPolygon"
+          ? this.geojson.coordinates.flat()
+          : this.geojson.coordinates;
+      const pathData = polygonRings
         .map((ring) => {
           if (ring.length === 0) {
             return "";
@@ -162,5 +231,20 @@ class MapLayer {
         this.projectionRevision += 1;
       }
     }
+  }
+
+  toggleVisibility() {
+    this.visible = !this.visible;
+  }
+
+  update(layerConfig: FirstLayer | OverlayLayer) {
+    this.baseMapPosition = (layerConfig as OverlayLayer).baseMapPosition ?? layerConfig.center;
+    this.bearing = layerConfig.bearing;
+    this.center = layerConfig.center!;
+    this.geojson = layerConfig.geojson;
+    this.opacity = layerConfig.opacity ?? 1;
+    this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
+    this.style = layerConfig.style;
+    this.visible = layerConfig.visible;
   }
 }

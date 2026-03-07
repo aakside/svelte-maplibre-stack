@@ -1,3 +1,9 @@
 export { default as Map } from "./Map.svelte";
-export { MapState, type FirstLayer, type Layers, type OverlayLayer } from "./map-state.svelte.ts";
+export {
+  MapLayer,
+  MapState,
+  type FirstLayer,
+  type LayerConfigs,
+  type OverlayLayer,
+} from "./map-state.svelte.ts";
 export { default as FourwaySplitMap } from "./FourwaySplitMap.svelte";
