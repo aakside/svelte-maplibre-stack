@@ -25,20 +25,21 @@ function ringToPathData(map: maplibregl.Map, ring: Polygon["coordinates"][number
   return `M ${startPoint.x} ${startPoint.y} ${segments} Z`;
 }
 
-function geometryToClipPath(map?: maplibregl.Map, geometry?: RegionGeometry): string | undefined {
+function geometryToPath(map?: maplibregl.Map, geometry?: RegionGeometry): string | undefined {
   if (map && geometry) {
     const pathData = getPolygonRings(geometry)
       .map((ring) => ringToPathData(map, ring))
       .filter(Boolean)
       .join(" ");
-
-    return pathData.length > 0 ? `path("${pathData}")` : undefined;
+    return pathData.length > 0 ? pathData : undefined;
   }
 }
 
 export interface FirstLayer {
   bearing: number;
   center: LatLng;
+  pathBorderColor?: string;
+  pathBorderWidth?: number;
   geojson?: RegionGeometry;
   opacity?: number;
   pitch?: MapOptions["pitch"];
@@ -159,12 +160,30 @@ export class MapState {
     })) as OverlayLayer[];
     return [baseLayer, ...overlayLayers];
   }
+
+  update(layers: LayerConfigs) {
+    layers.forEach((layerConfig, i) => {
+      if (i === 0) {
+        this.center = layerConfig.center!;
+        this.pitch = layerConfig.pitch;
+        this.zoom = layerConfig.zoom ?? this.zoom;
+        this.layers[0].update(layerConfig);
+      } else if (i >= this.layers.length) {
+        this.addLayer(layerConfig as OverlayLayer);
+      } else {
+        this.layers[i].update(layerConfig);
+      }
+    });
+  }
 }
 
 export class MapLayer {
   baseMapPosition: LatLng;
   bearing: number = $state(0);
   center: LatLng;
+  pathBorderColor?: string;
+  pathBorderWidth?: number;
+  path?: string;
   clipPath?: string;
   geojson?: RegionGeometry;
   id: string;
@@ -187,6 +206,8 @@ export class MapLayer {
       index === 0 ? layerConfig.center! : (layerConfig as OverlayLayer).baseMapPosition,
     );
     this.bearing = layerConfig.bearing;
+    this.pathBorderColor = $state(layerConfig.pathBorderColor);
+    this.pathBorderWidth = $state(layerConfig.pathBorderWidth);
     this.opacity = $state(layerConfig.opacity ?? 1);
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
     this.geojson = $state(layerConfig.geojson);
@@ -208,7 +229,7 @@ export class MapLayer {
       }
       return layerConfig.center ?? this.overlayCenter;
     });
-    this.clipPath = $derived.by<string | undefined>(() => {
+    this.path = $derived.by<string | undefined>(() => {
       const _ = [
         mapState.layers[0].bearing,
         this.baseMapPosition.lat,
@@ -220,8 +241,9 @@ export class MapLayer {
         mapState.pitch,
         mapState.zoom,
       ];
-      return geometryToClipPath(this.map, this.geojson);
+      return geometryToPath(this.map, this.geojson);
     });
+    this.clipPath = $derived<string | undefined>(this.path ? `path("${this.path}")` : undefined);
   }
 
   markProjectionStaleFromMap() {
@@ -250,10 +272,12 @@ export class MapLayer {
     this.baseMapPosition = (layerConfig as OverlayLayer).baseMapPosition ?? layerConfig.center;
     this.bearing = layerConfig.bearing;
     this.center = layerConfig.center!;
+    this.pathBorderColor = layerConfig.pathBorderColor;
+    this.pathBorderWidth = layerConfig.pathBorderWidth;
     this.geojson = layerConfig.geojson;
     this.opacity = layerConfig.opacity ?? 1;
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
     this.style = layerConfig.style;
-    this.visible = layerConfig.visible;
+    this.visible = layerConfig.visible ?? true;
   }
 }

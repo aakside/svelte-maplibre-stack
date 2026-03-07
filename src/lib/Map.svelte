@@ -111,6 +111,21 @@
       >
         <Projection type="globe" />
       </MapLibre>
+      {#if (layer.pathBorderWidth ?? 0 > 0) && layer.path && layer.visible}
+        <svg
+          aria-hidden="true"
+          style="height: 100%; left: 0; pointer-events: none; position: absolute; top: 0; visibility: inherit; width: 100%;"
+        >
+          <path
+            d={layer.path}
+            fill="none"
+            opacity={layer.opacity}
+            stroke={layer.pathBorderColor ?? "black"}
+            stroke-width={layer.pathBorderWidth}
+            vector-effect="non-scaling-stroke"
+          />
+        </svg>
+      {/if}
     {/if}
   {/each}
 </div>
