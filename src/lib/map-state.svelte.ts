@@ -3,10 +3,43 @@ import maplibregl, { type MapOptions } from "maplibre-gl";
 
 export type LatLng = { lat: number; lng: number };
 
+type RegionGeometry = Polygon | MultiPolygon;
+
+function getPolygonRings(geometry: RegionGeometry): Polygon["coordinates"] {
+  return geometry.type === "MultiPolygon" ? geometry.coordinates.flat() : geometry.coordinates;
+}
+
+function ringToPathData(map: maplibregl.Map, ring: Polygon["coordinates"][number]): string {
+  if (ring.length === 0) {
+    return "";
+  }
+
+  const [start, ...rest] = ring;
+  const startPoint = map.project(start as maplibregl.LngLatLike);
+  const segments = rest
+    .map(([lng, lat]) => {
+      const point = map.project([lng, lat]);
+      return `L ${point.x} ${point.y}`;
+    })
+    .join(" ");
+  return `M ${startPoint.x} ${startPoint.y} ${segments} Z`;
+}
+
+function geometryToClipPath(map?: maplibregl.Map, geometry?: RegionGeometry): string | undefined {
+  if (map && geometry) {
+    const pathData = getPolygonRings(geometry)
+      .map((ring) => ringToPathData(map, ring))
+      .filter(Boolean)
+      .join(" ");
+
+    return pathData.length > 0 ? `path("${pathData}")` : undefined;
+  }
+}
+
 export interface FirstLayer {
   bearing: number;
   center: LatLng;
-  geojson?: Polygon | MultiPolygon;
+  geojson?: RegionGeometry;
   opacity?: number;
   pitch?: MapOptions["pitch"];
   style?: MapOptions["style"];
@@ -23,7 +56,7 @@ export interface OverlayLayer extends Omit<FirstLayer, "center" | "geojson"> {
    * The center of the overlay map initially used to guide the calculation of the overlay map's center.
    */
   center?: LatLng;
-  geojson: Polygon | MultiPolygon;
+  geojson: RegionGeometry;
   /**
    * The point on the overlay that should be aligned with the base map position (`baseMapPosition`). This is needed to compute the center of the overlay map based on the base map's center and the layer's base map position.
    */
@@ -133,7 +166,7 @@ export class MapLayer {
   bearing: number = $state(0);
   center: LatLng;
   clipPath?: string;
-  geojson?: Polygon | MultiPolygon;
+  geojson?: RegionGeometry;
   id: string;
   map?: maplibregl.Map = $state(undefined);
   projectionRevision: number = $state(0);
@@ -187,31 +220,7 @@ export class MapLayer {
         mapState.pitch,
         mapState.zoom,
       ];
-      if (!this.map || !this.geojson) {
-        return undefined;
-      }
-      const polygonRings =
-        this.geojson.type === "MultiPolygon"
-          ? this.geojson.coordinates.flat()
-          : this.geojson.coordinates;
-      const pathData = polygonRings
-        .map((ring) => {
-          if (ring.length === 0) {
-            return "";
-          }
-          const [start, ...rest] = ring;
-          const startPoint = this.map!.project(start as maplibregl.LngLatLike);
-          const segments = rest
-            .map(([lng, lat]) => {
-              const point = this.map!.project([lng, lat]);
-              return `L ${point.x} ${point.y}`;
-            })
-            .join(" ");
-          return `M ${startPoint.x} ${startPoint.y} ${segments} Z`;
-        })
-        .filter(Boolean)
-        .join(" ");
-      return pathData.length > 0 ? `path("${pathData}")` : undefined;
+      return geometryToClipPath(this.map, this.geojson);
     });
   }
 
