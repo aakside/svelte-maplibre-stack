@@ -71,6 +71,7 @@ interface ToLayerConfigsOptions {
 }
 
 export class MapState {
+  additionalAttributions: string[];
   layers: MapLayer[];
   layerBeingMoved = $state<{
     index: number | undefined;
@@ -104,8 +105,17 @@ export class MapState {
     this.layers = $state(
       layerConfigs.map((layerConfig, index) => new MapLayer(this, index, layerConfig)),
     );
+    this.additionalAttributions = $derived(
+      this.layers.slice(1).flatMap((layer) => layer.attributions),
+    );
     $effect.pre(() => {
       this.previousBasemapBearing = this.layers[0].bearing;
+    });
+    $effect(() => {
+      if (this.layers[0].attributionControl) {
+        this.layers[0].attributionControl.options.customAttribution = this.additionalAttributions;
+        this.layers[0].attributionControl._updateAttributions();
+      }
     });
   }
 
@@ -178,6 +188,7 @@ export class MapState {
 }
 
 export class MapLayer {
+  attributions: string[];
   baseMapPosition: LatLng;
   bearing: number = $state(0);
   center: LatLng;
@@ -192,6 +203,7 @@ export class MapLayer {
   opacity: number;
   overlayCenter: LatLng;
   style?: MapOptions["style"];
+  styleUpdateIteration = $state(0);
   visible: boolean = $state(true);
   private lastProjectionCameraSignature = "";
 
@@ -212,6 +224,32 @@ export class MapLayer {
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
     this.geojson = $state(layerConfig.geojson);
     this.style = $state(layerConfig.style);
+    this.attributions = $derived.by(() => {
+      const _ = [this.styleUpdateIteration];
+      let attributions: Array<string> = [];
+      if (this.attributionControl?.options.customAttribution) {
+        if (Array.isArray(this.attributionControl.options.customAttribution)) {
+          attributions = attributions.concat(
+            this.attributionControl.options.customAttribution.map((attribution) =>
+              typeof attribution !== "string" ? "" : attribution,
+            ),
+          );
+        } else if (typeof this.attributionControl.options.customAttribution === "string") {
+          attributions.push(this.attributionControl.options.customAttribution);
+        }
+      }
+      const tileManagers = this.map?.style.tileManagers;
+      for (const id in tileManagers) {
+        const tileManager = tileManagers[id];
+        if (tileManager.used || tileManager.usedForTerrain) {
+          const source = tileManager.getSource();
+          if (source.attribution && attributions.indexOf(source.attribution) < 0) {
+            attributions.push(source.attribution);
+          }
+        }
+      }
+      return attributions;
+    });
     this.center = $derived.by(() => {
       if (index === 0) {
         return mapState.center;
@@ -244,6 +282,14 @@ export class MapLayer {
       return geometryToPath(this.map, this.geojson);
     });
     this.clipPath = $derived<string | undefined>(this.path ? `path("${this.path}")` : undefined);
+  }
+
+  get attributionControl(): maplibregl.AttributionControl | undefined {
+    return this.map?._controls.find(
+      (control) =>
+        control instanceof maplibregl.AttributionControl ||
+        Object.keys(control).includes("_toggleAttribution"),
+    ) as maplibregl.AttributionControl | undefined;
   }
 
   markProjectionStaleFromMap() {

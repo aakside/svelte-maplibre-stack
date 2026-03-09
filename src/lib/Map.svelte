@@ -85,6 +85,9 @@
               mapState.containerDimensions.y = layer.map!._container.clientHeight;
             }
           : undefined}
+        onstyledata={() => {
+          layer.styleUpdateIteration++;
+        }}
         bind:pitch={mapState.pitch}
         bind:roll={mapState.roll}
         style={layer.style ?? mapState.style}
