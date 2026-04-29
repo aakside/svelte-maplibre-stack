@@ -47,6 +47,10 @@
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aakside/svelte-maplibre-stack"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && npm run prepack",
