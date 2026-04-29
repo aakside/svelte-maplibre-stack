@@ -1,6 +1,8 @@
 import type { MultiPolygon, Polygon } from "geojson";
 import maplibregl, { type MapOptions } from "maplibre-gl";
 
+export const DEFAULT_STYLE_URL = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
 export type LatLng = { lat: number; lng: number };
 
 type RegionGeometry = Polygon | MultiPolygon;
@@ -84,9 +86,6 @@ export class MapState {
   pitch: MapOptions["pitch"];
   roll: MapOptions["roll"] = $state(undefined);
   elevation?: MapOptions["elevation"] = $state(undefined);
-  style: MapOptions["style"] = $state(
-    "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-  );
   zoom: Required<MapOptions>["zoom"];
   containerDimensions = $state({ x: 0, y: 0 });
   isBaseMapLoaded = $state(false);
@@ -223,7 +222,7 @@ export class MapLayer {
     this.opacity = $state(layerConfig.opacity ?? 1);
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
     this.geojson = $state(layerConfig.geojson);
-    this.style = $state(layerConfig.style);
+    this.style = $state(layerConfig.style ?? (index === 0 ? DEFAULT_STYLE_URL : undefined));
     this.attributions = $derived.by(() => {
       const _ = [this.styleUpdateIteration];
       let attributions: Array<string> = [];

@@ -90,7 +90,7 @@
         }}
         bind:pitch={mapState.pitch}
         bind:roll={mapState.roll}
-        style={layer.style ?? mapState.style}
+        style={layer.style ?? mapState.layers[0].style}
         bind:zoom={
           () =>
             i === 0
