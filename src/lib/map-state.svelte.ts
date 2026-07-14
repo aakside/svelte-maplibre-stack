@@ -208,7 +208,7 @@ export class MapLayer {
 
   constructor(
     private mapState: MapState,
-    index: number,
+    private index: number,
     layerConfig: FirstLayer | OverlayLayer,
     id?: string,
   ) {
@@ -322,7 +322,7 @@ export class MapLayer {
     this.geojson = layerConfig.geojson;
     this.opacity = layerConfig.opacity ?? 1;
     this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
-    this.style = layerConfig.style;
+    this.style = layerConfig.style ?? (this.index === 0 ? DEFAULT_STYLE_URL : undefined);
     this.visible = layerConfig.visible ?? true;
   }
 }
