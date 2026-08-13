@@ -146,6 +146,18 @@ export class MapState {
     }
   }
 
+  setBearing(index: number, bearing: number) {
+    this.layers.forEach(
+      (layer, layerIndex) =>
+        (layer.bearing =
+          layerIndex === index
+            ? bearing
+            : index !== 0 || layer.isBearingLocked
+              ? layer.bearing
+              : layer.bearing + (bearing - this.previousBasemapBearing)),
+    );
+  }
+
   toLayerConfigs(options: ToLayerConfigsOptions = {}): LayerConfigs {
     const baseLayer: FirstLayer = {
       bearing: this.layers[0].bearing,
@@ -197,6 +209,7 @@ export class MapLayer {
   clipPath?: string;
   geojson?: RegionGeometry;
   id: string;
+  isBearingLocked: boolean = $state(false);
   map?: maplibregl.Map = $state(undefined);
   projectionRevision: number = $state(0);
   opacity: number;

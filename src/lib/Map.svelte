@@ -15,17 +15,7 @@
       <MapLibre
         attributionControl={i === 0 ? undefined : false}
         bind:bearing={
-          () => mapState.layers[i].bearing,
-          (value) =>
-            mapState.layers.forEach(
-              (layer, li) =>
-                (layer.bearing =
-                  li === i
-                    ? value
-                    : i === 0
-                      ? layer.bearing + (value - mapState.previousBasemapBearing)
-                      : layer.bearing),
-            )
+          () => mapState.layers[i].bearing, (bearing) => mapState.setBearing(i, bearing)
         }
         bind:center={
           () => {
