@@ -30,6 +30,7 @@
             }
           }
         }
+        dragRotate={!layer.isBearingLocked}
         bind:elevation={mapState.elevation}
         inlineStyle={`
           clip-path: ${layer.clipPath};
@@ -81,6 +82,7 @@
         bind:pitch={mapState.pitch}
         bind:roll={mapState.roll}
         style={layer.style ?? mapState.layers[0].style}
+        touchZoomRotate={!layer.isBearingLocked}
         bind:zoom={
           () =>
             i === 0
