@@ -1,4 +1,5 @@
 import type { MultiPolygon, Polygon } from "geojson";
+import { mapGeometry, createTransform } from "./vector-tiles.js";
 import maplibregl, { type MapOptions } from "maplibre-gl";
 
 export const DEFAULT_STYLE_URL = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
@@ -73,269 +74,157 @@ interface ToLayerConfigsOptions {
 }
 
 export class MapState {
-  additionalAttributions: string[];
   layers: MapLayer[];
-  layerBeingMoved = $state<{
-    index: number | undefined;
-    center?: LatLng;
-  }>({ index: undefined, center: undefined });
-  previousBasemapBearing: number = $state(0);
+  layerBeingMoved = $state<{ index: number | undefined; center?: LatLng }>({ index: undefined });
   center: LatLng;
   maxPitch?: MapOptions["maxPitch"];
   minPitch?: MapOptions["minPitch"];
   pitch: MapOptions["pitch"];
   roll: MapOptions["roll"] = $state(undefined);
-  elevation?: MapOptions["elevation"] = $state(undefined);
-  zoom: Required<MapOptions>["zoom"];
+  elevation: MapOptions["elevation"] = $state(undefined);
+  zoom: number;
   containerDimensions = $state({ x: 0, y: 0 });
   isBaseMapLoaded = $state(false);
+  error = $state<Error | undefined>();
+  additionalAttributions: string[] = $state([]);
+  attributionControl = $state<maplibregl.AttributionControl>();
 
   constructor(
-    layerConfigs: LayerConfigs,
+    configs: LayerConfigs,
     minPitch?: MapOptions["minPitch"],
     maxPitch?: MapOptions["maxPitch"],
   ) {
+    if (!configs.length) throw new Error("A base layer is required");
     this.minPitch = $state(minPitch);
     this.maxPitch = $state(maxPitch);
-    this.pitch = $state(layerConfigs[0].pitch);
-    this.zoom = $state(layerConfigs[0].zoom ?? 4);
-    const centerLngLat = maplibregl.LngLat.convert(layerConfigs[0].center ?? { lat: 0, lng: 0 });
-    this.center = $state({ lat: centerLngLat.lat, lng: centerLngLat.lng });
-    this.layers = $state(
-      layerConfigs.map((layerConfig, index) => new MapLayer(this, index, layerConfig)),
-    );
-    this.additionalAttributions = $derived(
-      this.layers.slice(1).flatMap((layer) => layer.attributions),
-    );
-    $effect.pre(() => {
-      this.previousBasemapBearing = this.layers[0].bearing;
-    });
-    $effect(() => {
-      if (this.layers[0].attributionControl) {
-        this.layers[0].attributionControl.options.customAttribution = this.additionalAttributions;
-        this.layers[0].attributionControl._updateAttributions();
-      }
-    });
+    this.center = $state(configs[0].center);
+    this.pitch = $state(configs[0].pitch);
+    this.zoom = $state(configs[0].zoom ?? 4);
+    this.layers = $state(configs.map((config, index) => new MapLayer(this, index, config)));
   }
-
-  /** Add an overlay layer to the map. */
-  addLayer(layerConfig: OverlayLayer): string {
-    const layer = new MapLayer(this, this.layers.length, layerConfig);
+  addLayer(config: OverlayLayer) {
+    const layer = new MapLayer(this, this.layers.length, config);
     this.layers.push(layer);
     return layer.id;
   }
-
-  /** Reposition the base map to align with the center of the specified overlay layer. */
   flyToLayer(index: number) {
-    if (index !== 0 && index < this.layers.length) {
-      // TODO: Compute an appropriate zoom level based on the layer's bounds.
-      this.layers[0].map?.flyTo({
-        center: this.layers[index].baseMapPosition,
-      });
-    }
+    if (index > 0 && index < this.layers.length)
+      this.layers[0].map?.flyTo({ center: this.layers[index].baseMapPosition });
   }
-
-  /** Remove the specified overlay layer. */
-  removeLayer(index: number): string {
-    if (index !== 0 && index < this.layers.length) {
-      this.layers[index].map = undefined;
-      const removedLayer = this.layers.splice(index, 1)[0];
-      return removedLayer.id;
-    } else {
+  removeLayer(index: number) {
+    if (!Number.isInteger(index) || index <= 0 || index >= this.layers.length)
       throw new Error("Invalid layer index");
-    }
+    return this.layers.splice(index, 1)[0].id;
   }
-
   setBearing(index: number, bearing: number) {
-    this.layers.forEach(
-      (layer, layerIndex) =>
-        (layer.bearing =
-          layerIndex === index
-            ? bearing
-            : index !== 0 || layer.isBearingLocked
-              ? layer.bearing
-              : layer.bearing + (bearing - this.previousBasemapBearing)),
-    );
+    const delta = bearing - this.layers[index].bearing;
+    this.layers.forEach((layer, i) => {
+      if (i === index) layer.bearing = bearing;
+      else if (index === 0 && !layer.isBearingLocked) layer.bearing += delta;
+    });
   }
-
   toLayerConfigs(options: ToLayerConfigsOptions = {}): LayerConfigs {
-    const baseLayer: FirstLayer = {
-      bearing: this.layers[0].bearing,
-      center: this.center,
-      geojson: options.includeGeojson ? this.layers[0].geojson : undefined,
-      opacity: this.layers[0].opacity,
-      pitch: this.pitch,
-      style: this.layers[0].style,
-      visible: this.layers[0].visible,
-      zoom: this.zoom,
-    };
-    const overlayLayers: OverlayLayer[] = this.layers.slice(1).map((layer) => ({
-      baseMapPosition: layer.baseMapPosition,
+    return this.layers.map((layer, index) => ({
       bearing: layer.bearing,
-      center: layer.center,
+      center: index === 0 ? this.center : layer.center,
       geojson: options.includeGeojson ? layer.geojson : undefined,
       opacity: layer.opacity,
       style: layer.style,
-      overlayCenter: layer.overlayCenter,
       visible: layer.visible,
-    })) as OverlayLayer[];
-    return [baseLayer, ...overlayLayers];
+      pathBorderColor: layer.pathBorderColor,
+      pathBorderWidth: layer.pathBorderWidth,
+      ...(index === 0
+        ? { pitch: this.pitch, zoom: this.zoom }
+        : { baseMapPosition: layer.baseMapPosition, overlayCenter: layer.overlayCenter }),
+    })) as LayerConfigs;
   }
-
-  update(layers: LayerConfigs) {
-    layers.forEach((layerConfig, i) => {
-      if (i === 0) {
-        this.center = layerConfig.center!;
-        this.pitch = layerConfig.pitch;
-        this.zoom = layerConfig.zoom ?? this.zoom;
-        this.layers[0].update(layerConfig);
-      } else if (i >= this.layers.length) {
-        this.addLayer(layerConfig as OverlayLayer);
-      } else {
-        this.layers[i].update(layerConfig);
-      }
+  update(configs: LayerConfigs) {
+    if (!configs.length) throw new Error("A base layer is required");
+    this.center = configs[0].center;
+    this.pitch = configs[0].pitch;
+    this.zoom = configs[0].zoom ?? this.zoom;
+    configs.forEach((config, index) => {
+      if (this.layers[index]) this.layers[index].update(config);
+      else this.addLayer(config as OverlayLayer);
     });
+    this.layers.splice(configs.length);
   }
 }
 
 export class MapLayer {
-  attributions: string[];
+  id: string;
   baseMapPosition: LatLng;
-  bearing: number = $state(0);
+  overlayCenter: LatLng;
+  bearing = $state(0);
   center: LatLng;
   pathBorderColor?: string;
   pathBorderWidth?: number;
   path?: string;
   clipPath?: string;
   geojson?: RegionGeometry;
-  id: string;
-  isBearingLocked: boolean = $state(false);
-  map?: maplibregl.Map = $state(undefined);
-  projectionRevision: number = $state(0);
-  opacity: number;
-  overlayCenter: LatLng;
-  style?: MapOptions["style"];
+  isBearingLocked = $state(false);
+  map = $state<maplibregl.Map>();
+  projectionRevision = $state(0);
   styleUpdateIteration = $state(0);
-  visible: boolean = $state(true);
-  private lastProjectionCameraSignature = "";
+  opacity: number;
+  style?: MapOptions["style"];
+  visible = $state(true);
+  attributions: string[] = $state([]);
 
   constructor(
     private mapState: MapState,
     private index: number,
-    layerConfig: FirstLayer | OverlayLayer,
+    config: FirstLayer | OverlayLayer,
     id?: string,
   ) {
-    this.id = id ?? `layer-${Math.random().toString(36).slice(2)}`;
+    this.id = id ?? `layer-${crypto.randomUUID()}`;
     this.baseMapPosition = $state(
-      index === 0 ? layerConfig.center! : (layerConfig as OverlayLayer).baseMapPosition,
+      index === 0 ? config.center! : (config as OverlayLayer).baseMapPosition,
     );
-    this.bearing = layerConfig.bearing;
-    this.pathBorderColor = $state(layerConfig.pathBorderColor);
-    this.pathBorderWidth = $state(layerConfig.pathBorderWidth);
-    this.opacity = $state(layerConfig.opacity ?? 1);
-    this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
-    this.geojson = $state(layerConfig.geojson);
-    this.style = $state(layerConfig.style ?? (index === 0 ? DEFAULT_STYLE_URL : undefined));
-    this.attributions = $derived.by(() => {
-      const _ = [this.styleUpdateIteration];
-      let attributions: Array<string> = [];
-      if (this.attributionControl?.options.customAttribution) {
-        if (Array.isArray(this.attributionControl.options.customAttribution)) {
-          attributions = attributions.concat(
-            this.attributionControl.options.customAttribution.map((attribution) =>
-              typeof attribution !== "string" ? "" : attribution,
-            ),
-          );
-        } else if (typeof this.attributionControl.options.customAttribution === "string") {
-          attributions.push(this.attributionControl.options.customAttribution);
-        }
-      }
-      const tileManagers = this.map?.style.tileManagers;
-      for (const id in tileManagers) {
-        const tileManager = tileManagers[id];
-        if (tileManager.used || tileManager.usedForTerrain) {
-          const source = tileManager.getSource();
-          if (source.attribution && attributions.indexOf(source.attribution) < 0) {
-            attributions.push(source.attribution);
-          }
-        }
-      }
-      return attributions;
+    this.overlayCenter = $state((config as OverlayLayer).overlayCenter ?? config.center!);
+    this.bearing = config.bearing;
+    this.geojson = $state(config.geojson);
+    this.opacity = $state(config.opacity ?? 1);
+    this.visible = config.visible;
+    this.pathBorderColor = $state(config.pathBorderColor);
+    this.pathBorderWidth = $state(config.pathBorderWidth);
+    this.style = $state(config.style ?? (index === 0 ? DEFAULT_STYLE_URL : undefined));
+    this.center = $derived(index === 0 ? mapState.center : this.overlayCenter);
+    this.path = $derived.by(() => {
+      const _ = this.projectionRevision;
+      const geometry =
+        this.geojson && index > 0
+          ? (mapGeometry(
+              this.geojson,
+              createTransform({
+                overlayCenter: this.overlayCenter,
+                baseMapPosition: this.baseMapPosition,
+                bearing: this.bearing - mapState.layers[0].bearing,
+              }).forward,
+            ) as RegionGeometry)
+          : this.geojson;
+      return geometryToPath(this.map, geometry);
     });
-    this.center = $derived.by(() => {
-      if (index === 0) {
-        return mapState.center;
-      }
-      const _ = [mapState.center, mapState.layerBeingMoved.index, mapState.zoom];
-      if (this.map) {
-        const baseMapPositionPoint = mapState.layers[0].map!.project(this.baseMapPosition);
-        const overlayCenterPoint = this.map.project(this.overlayCenter);
-        return this.map.unproject(
-          new maplibregl.Point(mapState.containerDimensions.x, mapState.containerDimensions.y)
-            .div(2)
-            .add(overlayCenterPoint)
-            .sub(baseMapPositionPoint),
-        );
-      }
-      return layerConfig.center ?? this.overlayCenter;
-    });
-    this.path = $derived.by<string | undefined>(() => {
-      const _ = [
-        mapState.layers[0].bearing,
-        this.baseMapPosition.lat,
-        this.baseMapPosition.lng,
-        this.bearing,
-        this.center,
-        this.projectionRevision,
-        mapState.layerBeingMoved.center,
-        mapState.pitch,
-        mapState.zoom,
-      ];
-      return geometryToPath(this.map, this.geojson);
-    });
-    this.clipPath = $derived<string | undefined>(this.path ? `path("${this.path}")` : undefined);
+    this.clipPath = $derived(this.path ? `path("${this.path}")` : undefined);
   }
-
   get attributionControl(): maplibregl.AttributionControl | undefined {
-    return this.map?._controls.find(
-      (control) =>
-        control instanceof maplibregl.AttributionControl ||
-        Object.keys(control).includes("_toggleAttribution"),
-    ) as maplibregl.AttributionControl | undefined;
+    return this.mapState.attributionControl;
   }
-
   markProjectionStaleFromMap() {
-    if (this.map) {
-      const center = this.map.getCenter();
-      const signature = [
-        center.lat,
-        center.lng,
-        this.map.getZoom(),
-        this.map.getBearing(),
-        this.map.getPitch(),
-      ].join("|");
-
-      if (signature !== this.lastProjectionCameraSignature) {
-        this.lastProjectionCameraSignature = signature;
-        this.projectionRevision += 1;
-      }
-    }
+    this.projectionRevision++;
   }
-
   toggleVisibility() {
     this.visible = !this.visible;
   }
-
-  update(layerConfig: FirstLayer | OverlayLayer) {
-    this.baseMapPosition = (layerConfig as OverlayLayer).baseMapPosition ?? layerConfig.center;
-    this.bearing = layerConfig.bearing;
-    this.center = layerConfig.center!;
-    this.pathBorderColor = layerConfig.pathBorderColor;
-    this.pathBorderWidth = layerConfig.pathBorderWidth;
-    this.geojson = layerConfig.geojson;
-    this.opacity = layerConfig.opacity ?? 1;
-    this.overlayCenter = (layerConfig as OverlayLayer).overlayCenter ?? layerConfig.center!;
-    this.style = layerConfig.style ?? (this.index === 0 ? DEFAULT_STYLE_URL : undefined);
-    this.visible = layerConfig.visible ?? true;
+  update(config: FirstLayer | OverlayLayer) {
+    this.baseMapPosition = (config as OverlayLayer).baseMapPosition ?? config.center!;
+    this.overlayCenter = (config as OverlayLayer).overlayCenter ?? config.center!;
+    this.bearing = config.bearing;
+    this.geojson = config.geojson;
+    this.opacity = config.opacity ?? 1;
+    this.pathBorderColor = config.pathBorderColor;
+    this.pathBorderWidth = config.pathBorderWidth;
+    this.style = config.style ?? (this.index === 0 ? DEFAULT_STYLE_URL : undefined);
+    this.visible = config.visible;
   }
 }

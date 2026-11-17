@@ -3864,6 +3864,7 @@
       {
         baseMapPosition: { lng: -87.57254682496153, lat: 41.874130140204784 },
         bearing: 28.9,
+        style: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         // center: maplibregl.LngLat.convert({
         //   lng: -74.02511672470418,
         //   lat: 40.74663655767597,
@@ -3899,12 +3900,23 @@
 
   let presetIndex = $state(0);
   let mapState = $derived.by(() => {
-    return new MapState(LAYER_CONFIG_PRESETS[presetIndex] as LayerConfigs);
+    return new MapState(
+      LAYER_CONFIG_PRESETS[presetIndex].map((layer) => ({
+        ...layer,
+        visible: true,
+      })) as LayerConfigs,
+    );
   });
 </script>
 
 <div style="width: 100vw; height: 100vh;">
   <Map bind:mapState />
+  {#if mapState.error}<p
+      role="alert"
+      style="position: absolute; bottom: 2rem; left: 1rem; background: white; color: darkred; padding: 1rem;"
+    >
+      {mapState.error.message}
+    </p>{/if}
   <div
     style="position: absolute; top: 10px; left: 10px; z-index: 100; opacity: 0.75; padding: 5px; font-family: sans-serif;"
   >
